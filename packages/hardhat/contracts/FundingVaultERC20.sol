@@ -16,7 +16,7 @@ contract FundingVault {
 	error DeadlineNotPassed();
 	error NotEnoughTokens();
 	error OwnerOnly();
-    erro InvalidAmount();
+    error InvalidAmount();
 
 	// State Variables
 	using SafeERC20 for IERC20;
@@ -134,12 +134,20 @@ contract FundingVault {
 		);
 	}
 
+	
 	function addTokens(uint256 additionalTokens) external onlyOwner {
 		proofOfFundingToken.safeTransferFrom(
 			msg.sender,
 			address(this),
 			additionalTokens
 		);
+	}
+
+    function redeem() external{
+		if(block.timestamp < timestamp) revert DeadlineNotPassed();
+		uint256 voucherAmount=proofOfFundingToken.balanceOf(msg.sender);
+		proofOfFundingToken.safeTransferFrom(msg.sender, address(this), voucherAmount);
+		fundingToken.safeTransfer(msg.sender, voucherAmount);
 	}
 
 	function getVault() external view returns (Vault memory) {
