@@ -76,6 +76,7 @@ contract FundingVaultFactory{
      * @param _projectURL A link or hash containing the project's information (e.g., GitHub repository).
      */
     function deployFundingVault (
+		address _fundingToken,
         address _proofOfFundingToken,
         uint256 _proofOfFundingTokenAmount,  
         uint256 _minFundingAmount,
@@ -101,6 +102,7 @@ contract FundingVaultFactory{
         proofOfFundingToken = IERC20(_proofOfFundingToken);
 
         FundingVault fundingVault = new FundingVault (
+		_fundingToken,
         _proofOfFundingToken,
         _proofOfFundingTokenAmount,  
         _minFundingAmount,
