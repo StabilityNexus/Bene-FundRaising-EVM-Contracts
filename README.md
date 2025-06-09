@@ -53,7 +53,7 @@
 <!-- Project core values and objective -->
 <p align="center">
   <strong>
- Bene: Fundraising Platform is a decentralized application (DApp) that enables projects to receive funding in exchange for Proof of funding tokens. This DApp allows projects to request ETH(native currency of the network) in exchange for Proof of funding tokens, <a href="https://www.youtube.com/watch?v=HHN31PkUxaU">Know More</a>.
+ Bene: Fundraising Platform is a decentralized application (DApp) that enables projects to receive funding and offer Proof-of-Funding tokens to people who provided funding.
   </strong>
 </p>
 
@@ -61,40 +61,29 @@
 
 # Bene-FundRaising-EVM-Contracts
 
-<details>
-  <summary>Path to smart contracts</summary>
-  <ul>
-    <li>/packages/hardhat/contracts</li>
-  </ul>
-</details>
-<details>
-  <summary>Live Webiste URL</summary>
-  <ul>
-    <li>https://bene-evm.stability.nexus/</li>
-  </ul>
-</details>
+ * /packages/hardhat/contracts
 
-<details>
-  <summary>How it works</summary>
 
-- Each project contains two tokens:
+ * [Video Explaining the Bene Fundraising Protocol](https://www.youtube.com/watch?v=HHN31PkUxaU").
 
-  1.  **Proof-of-Funding Token Vouchers (PFTV)**: This token is minted during the project creation transaction and serves a main purposes:
+ * A frontend to interact with teh deployed contracts is deployed at [https://bene-evm.stability.nexus](https://bene-evm.stability.nexus).
 
-      - **Contribution Tracking**: Temporarily, contributors receive this token when participating in the project. Once it is confirmed that a refund is no longer possible, contributors can exchange the PFTV for the **Proof-funding Token (PFT)**.
-      - The total supply of PFTV equals the total issuance of PFT.
 
-  2.  **Proof-funding Token (PFT)**: Unlike the PFTV, the PFT is not minted on the contract. It represents the project or its organization and may also reflect proof-funding for similar projects within the same organization. PFTs are distributed only after refund conditions are no longer applicable, ensuring proper tracking.
+## How it works
 
-> The use of the PFTV ensures that during refunds, the origin of the token can be reliably traced to the current project. If PFTs were distributed immediately upon purchase, distinguishing whether a token originated from the current project or another related project would not be possible.
+- Project owners can create a funding vault that holds an amount of proof-of-funding tokens (PFTs), setting:
+  * the exchange rate that determines how many PFTs funders will receive per unit of funding.
+  * the minimum amount of funding that the projects needs to start.
+  * a deadline.
+- Users who provide funding receive temporary proof-of-funding token vouchers (PFTVs).
+- Project owners can only withdraw the provided funding if the minimum amount is reached before the deadline.
+- If the minimum amount is not reached before the deadline, users may obtain a refund of the funding they had provided, by giving back their PFTVs.
+- If the minimum amount is reached before the deadline, users may exchange their PFTVs for PFTs.
 
-- Project owners can create a funding vault that holds an amount of tokens, which may vary, setting a **timestamp** as a deadline.
-- A minimum amount of tokens must be sold before the project can withdraw funds. This ensures that the project receives sufficient backing.
-- If the timestamp is reached before minimum amount of tokens are sold, users have the option to exchange their tokens back for the corresponding ETHs, provided the minimum has not been reached.
 
-</details>
-<details>
-  <summary>Parameters of the funding vault</summary>
+The use of PFTVs ensures that, during refunds, only users who participated in the current fundraising can get a refund. If PFTs were distributed immediately to funders, it would be impossible to distinguish funders from other PFT holders in the refund phase, and thus these other PFT holders could wrongly receive refunds.
+
+### Parameters of the funding vault:
   
 - **timestamp**: The timestamp limit until withdrawal or refund is allowed.
 - **Minimum Funding Amount**: The minimum number of ETH needs to be raised to enable withdrawals or refunds.
@@ -113,11 +102,10 @@ The following constants are defined in the contract:
 - **Protocol Treasury Address** (`dev_addr`): The base58 address of the protocol treasury.
 - **Protocol Fee** (`dev_fee`): The percentage fee taken by the protocol (e.g., `5` for 5%).
 
-</details>
-<details>
-  <summary>Processes</summary>
+
+### Processes
  
-The Bene: Fundraising Platform supports seven main processes:
+The Bene Fundraising Platform supports seven main processes:
 
 1. **funding vault Creation**:
 
@@ -135,7 +123,7 @@ The Bene: Fundraising Platform supports seven main processes:
    - Users are allowed to exchange PFTVs for ETHs (at the exchange rate) if and only if the deadline has passed and the minimum number of tokens has not been sold.
    - This ensures that participants can retrieve their contributions if the funding goal is not met.
 
-4. **Withdraw ETHs**:
+4. **Withdraw ETH**:
 
    - Project owners are allowed to withdraw ETHs if and only if the minimum number of tokens has been sold.
    - Project owners can only withdraw to the address specified in `withdrawal_address`.
@@ -152,18 +140,8 @@ The Bene: Fundraising Platform supports seven main processes:
 7. **Redeem Tokens**:
    - Users are allowed to exchange **Proof of Funding Token Vouchers (PFTVs)** for **Proof-funding Tokens (PFTs)** if and only if the deadline has passed and the minimum number of tokens has been sold.
 
-</details>
-<details>
-  <summary>Usage</summary>
- You can interact with the platform using the following webpage:
 
-(https://bene-evm.stability.nexus/)
-</details>
-<details>
-  <summary>Installation</summary>
-  ## Prerequisites
-
-## Steps
+## Installation and Deployemnt
 
 ### Clone the Repository
 
@@ -185,7 +163,7 @@ yarn deploy
 ```
 
 
-## Deployed Contracts
+### Deployed Contracts
 
 Participation Token Contract: 0x66f5AE57323CED3d3eb0D41a066F4DB628B00392
 FundingVaultFactory Contract: 0x55cbF8284EDCd412bbac595b33Be1Ecdd04a79B7
