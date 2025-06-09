@@ -59,7 +59,7 @@
 
 ---
 
-# Bene-Fundraising-EVM-Frontend
+# Bene-FundRaising-EVM-Contracts
 
 <details>
   <summary>Path to smart contracts</summary>
