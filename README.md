@@ -110,8 +110,8 @@
 
 The following constants are defined in the contract:
 
-- **Protocol Treasury Address** (`dev_addr`): The base58 address of the developer.
-- **Protocol Fee** (`dev_fee`): The percentage fee taken by the developer (e.g., `5` for 5%).
+- **Protocol Treasury Address** (`dev_addr`): The base58 address of the protocol treasury.
+- **Protocol Fee** (`dev_fee`): The percentage fee taken by the protocol (e.g., `5` for 5%).
 
 </details>
 <details>
@@ -163,9 +163,6 @@ The Bene: Fundraising Platform supports seven main processes:
   <summary>Installation</summary>
   ## Prerequisites
 
-- **Node.js and npm (or yarn):** Ensure you have the latest versions installed. You can download them from the [official Node.js website](https://nodejs.org/).
-- **Code Editor:** Choose a code editor like [Visual Studio Code](https://code.visualstudio.com/), [Sublime Text](https://www.sublimetext.com/), or [WebStorm](https://www.jetbrains.com/webstorm/).
-
 ## Steps
 
 ### Clone the Repository
@@ -179,47 +176,19 @@ cd BenefactionPlatform-EVM
 
 ```bash
 npm install
-
 ```
 
-### Start the Development Server
-
-```bash
-npm run dev
-```
-
-This will start a development server, and your project will be accessible at http://localhost:5173/.
-
-</details>
-
-<<<<<<< HEAD
-<!-- Project Description (Start from here) -->
-
-<!-- Use Back Button after each section -->
-<div align="right"><kbd><a href="#readme-top">↑ Back to top ↑</a></kbd></div>
-=======
-Deployed Contracts:
-
-Participation Token Contract: 0x66f5AE57323CED3d3eb0D41a066F4DB628B00392
-FundingVaultFactory Contract: 0x55cbF8284EDCd412bbac595b33Be1Ecdd04a79B7
-
+### Deploy Contracts
 
 ```
 yarn deploy
 ```
 
-Deployed Contracts:
+
+## Deployed Contracts
 
 Participation Token Contract: 0x66f5AE57323CED3d3eb0D41a066F4DB628B00392
 FundingVaultFactory Contract: 0x55cbF8284EDCd412bbac595b33Be1Ecdd04a79B7
 
-This command deploys a test smart contract to the local network. The contract is located in `packages/hardhat/contracts` and can be modified to suit your needs. The `yarn deploy` command uses the deploy script located in `packages/hardhat/deploy` to deploy the contract to the network. You can also customize the deploy script.
->>>>>>> main
 
----
 
-<!-- Don't delete it -->
-<!-- Funding Badge -->
-<div align="center" name="fund">
-<a href="https://docs.stability.nexus/about-us/fund-us"><img src="public/Readmefooter.svg" alt="Fund Gluon Gold Badge"/></a>
-</div>
