@@ -53,7 +53,7 @@
 <!-- Project core values and objective -->
 <p align="center">
   <strong>
- Bene: Fundraising Platform is a decentralized application (DApp) that enables projects to receive funding and offer Proof-of-Funding tokens to people who provided funding.
+Bene allows project owners to raise funds for their projects and to reward funders with Proof-of-Funding tokens.
   </strong>
 </p>
 
@@ -63,10 +63,9 @@
 
  * /packages/hardhat/contracts
 
-
  * [Video Explaining the Bene Fundraising Protocol](https://www.youtube.com/watch?v=HHN31PkUxaU").
 
- * A frontend to interact with teh deployed contracts is deployed at [https://bene-evm.stability.nexus](https://bene-evm.stability.nexus).
+ * A frontend to interact with the deployed contracts is deployed at [https://bene-evm.stability.nexus](https://bene-evm.stability.nexus).
 
 
 ## How it works
