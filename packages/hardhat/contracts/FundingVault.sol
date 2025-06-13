@@ -54,7 +54,8 @@ contract FundingVault is ERC20 {
     uint256 public proofOfFundingTokenAmount; // The initial  proof-of-funding token amount which will be in fundingVault
     uint256 public timestamp; // The date limit until which withdrawal or after which refund is allowed.
     uint256 public immutable minFundingAmount; // The minimum amount of ETH required in the contract to enable withdrawal.
-    uint256 public exchangeRate; // The exchange rate of ETH per token
+    uint256 public exchangeRate; // The exchange rate numerator of ETH per token
+     uint256 public constant DENOMINATOR = 100000; // Fixed denominator
     address public withdrawalAddress; // WithdrawalAddress is also considered as owner of the Vault. 
     address private developerFeeAddress; // Developer address
     uint256 private developerFeePercentage; // Developer percentage in funds collected
@@ -132,7 +133,7 @@ contract FundingVault is ERC20 {
      */
     function purchaseTokens() external payable {
 
-        uint256 tokenAmount = msg.value * exchangeRate;
+        uint256 tokenAmount = (msg.value * exchangeRate) / DENOMINATOR;
 
         if (proofOfFundingToken.balanceOf(address(this)) - totalSupply() < tokenAmount) revert NotEnoughTokens();
         proofOfFundingToken.safeTransfer(msg.sender,tokenAmount);
@@ -153,7 +154,7 @@ contract FundingVault is ERC20 {
         if (amountRaised >= minFundingAmount) revert MinFundingAmountReached();
         
         uint256 voucherAmount = balanceOf(msg.sender);
-        uint256 refundAmount = voucherAmount / exchangeRate;
+        uint256 refundAmount = (voucherAmount * DENOMINATOR) / exchangeRate;
 
         _burn(msg.sender, voucherAmount);
        
