@@ -1,23 +1,27 @@
 # dependencies
 node_modules
 
-# yarn
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
+# env files
+.env
 
-# eslint
-.eslintcache
+# coverage
+coverage
+coverage.json
 
-# misc
-.DS_Store
+# typechain
+typechain
+typechain-types
 
-# IDE
-.vscode
-.idea
+# hardhat files
+cache
+artifacts
 
-# cli
-dist
+# zkSync files
+artifacts-zk
+cache-zk
+
+# deployments
+deployments/localhost
+
+# other
+temp
