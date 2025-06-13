@@ -1,4 +1,3 @@
-
 <!-- Don't delete it -->
 <div name="readme-top"></div>
 
@@ -7,10 +6,10 @@
   <img alt="Stability Nexus" src="public/orglogo.svg" width="175">
   &nbsp;
   &nbsp;
-  <img src="public/plusSign" width="30" height="175" />
+  <img src="public/plusSign.svg" width="30" height="175" />
   &nbsp;
   &nbsp;
-  <img src="public/logo.svg" width="175" />
+  <img src="public/Benelogo.svg" width="175" />
 </div>
 
 &nbsp;
@@ -50,6 +49,7 @@
 </p>
 
 &nbsp;
+
 <!-- Project core values and objective -->
 <p align="center">
   <strong>
@@ -61,29 +61,27 @@ Bene allows project owners to raise funds for their projects and to reward funde
 
 # Bene-FundRaising-EVM-Contracts
 
- * /packages/hardhat/contracts
+- /packages/hardhat/contracts
 
- * [Video Explaining the Bene Fundraising Protocol](https://www.youtube.com/watch?v=HHN31PkUxaU").
+- [Video Explaining the Bene Fundraising Protocol](https://www.youtube.com/watch?v=HHN31PkUxaU").
 
- * A frontend to interact with the deployed contracts is deployed at [https://bene-evm.stability.nexus](https://bene-evm.stability.nexus).
-
+- A frontend to interact with the deployed contracts is deployed at [https://bene-evm.stability.nexus](https://bene-evm.stability.nexus).
 
 ## How it works
 
 - Project owners can create a funding vault that holds an amount of proof-of-funding tokens (PFTs), setting:
-  * the exchange rate that determines how many PFTs funders will receive per unit of funding.
-  * the minimum amount of funding that the projects needs to start.
-  * a deadline.
+  - the exchange rate that determines how many PFTs funders will receive per unit of funding.
+  - the minimum amount of funding that the projects needs to start.
+  - a deadline.
 - Users who provide funding receive temporary proof-of-funding token vouchers (PFTVs).
 - Project owners can only withdraw the provided funding if the minimum amount is reached before the deadline.
 - If the minimum amount is not reached before the deadline, users may obtain a refund of the funding they had provided, by giving back their PFTVs.
 - If the minimum amount is reached before the deadline, users may exchange their PFTVs for PFTs.
 
-
 The use of PFTVs ensures that, during refunds, only users who participated in the current fundraising can get a refund. If PFTs were distributed immediately to funders, it would be impossible to distinguish funders from other PFT holders in the refund phase, and thus these other PFT holders could wrongly receive refunds.
 
 ### Parameters of the funding vault:
-  
+
 - **timestamp**: The timestamp limit until withdrawal or refund is allowed.
 - **Minimum Funding Amount**: The minimum number of ETH needs to be raised to enable withdrawals or refunds.
 - **Proof of funding Token Address**: The smart contract address for the Proof-of-Funding token (e.g., 0x123...abc)
@@ -101,9 +99,8 @@ The following constants are defined in the contract:
 - **Protocol Treasury Address** (`dev_addr`): The base58 address of the protocol treasury.
 - **Protocol Fee** (`dev_fee`): The percentage fee taken by the protocol (e.g., `5` for 5%).
 
-
 ### Processes
- 
+
 The Bene Fundraising Platform supports seven main processes:
 
 1. **funding vault Creation**:
@@ -139,7 +136,6 @@ The Bene Fundraising Platform supports seven main processes:
 7. **Redeem Tokens**:
    - Users are allowed to exchange **Proof of Funding Token Vouchers (PFTVs)** for **Proof-funding Tokens (PFTs)** if and only if the deadline has passed and the minimum number of tokens has been sold.
 
-
 ## Installation and Deployemnt
 
 ### Clone the Repository
@@ -161,10 +157,6 @@ npm install
 yarn deploy
 ```
 
-
 ### Deployed Contracts
 
 FundingVaultFactory Contract: 0x55cbF8284EDCd412bbac595b33Be1Ecdd04a79B7
-
-
-
