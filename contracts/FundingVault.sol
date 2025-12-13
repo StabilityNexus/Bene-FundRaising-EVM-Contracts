@@ -127,25 +127,46 @@ contract FundingVault is ERC20 {
 
     
     /**
-     * @dev Allows users to deposit ERC20 funding tokens and receive voucher tokens (VCHR) based on exchange rate
-     * @param amount The amount of funding tokens to deposit
+     * @dev Allows users to deposit ERC20 funding tokens and receive voucher tokens (VCHR) based on exchange rate.
+     * Handles fee-on-transfer tokens by computing actual received amount.
+     * Enforces solvency: proofOfFundingToken balance must cover all outstanding vouchers.
+     * @param amount The amount of funding tokens the user intends to transfer
      */
     function purchaseTokens(uint256 amount) external {
         require(amount > 0, "Amount must be greater than 0");
 
-        uint256 voucherAmount = amount * exchangeRate;
+        // Capture balance BEFORE transfer to handle fee-on-transfer tokens
+        uint256 balanceBefore = fundingToken.balanceOf(address(this));
 
-        // Check if enough proof-of-funding tokens are available for redemption
-        if (proofOfFundingToken.balanceOf(address(this)) < voucherAmount) revert NotEnoughTokens();
-        
         // Transfer funding tokens from user to this contract
         fundingToken.safeTransferFrom(msg.sender, address(this), amount);
-        
+
+        // Compute ACTUAL received amount (handles fee-on-transfer tokens)
+        uint256 balanceAfter = fundingToken.balanceOf(address(this));
+        uint256 received = balanceAfter - balanceBefore;
+
+        // Ensure positive transfer occurred
+        require(received > 0, "No tokens received after transfer");
+
+        // Calculate voucher amount based on ACTUAL received tokens
+        uint256 voucherAmount = received * exchangeRate;
+
+        // Enforce FULL solvency: proofOfFundingToken balance must cover all outstanding vouchers
+        // totalSupply() = current outstanding VCHR vouchers
+        // We need: proofOfFundingToken.balanceOf(this) >= totalSupply() + new voucherAmount
+        uint256 totalOutstandingVouchers = totalSupply() + voucherAmount;
+        uint256 proofOfFundingTokenBalance = proofOfFundingToken.balanceOf(address(this));
+
+        if (proofOfFundingTokenBalance < totalOutstandingVouchers) {
+            revert NotEnoughTokens();
+        }
+
         // Mint vouchers to user (VCHR tokens represent their participation)
         _mint(msg.sender, voucherAmount);
 
-        amountRaised = amountRaised + amount;
-        
+        // Track ACTUAL amount raised (received, not requested)
+        amountRaised = amountRaised + received;
+
         emit TokensPurchased(msg.sender, voucherAmount);
     }
 
