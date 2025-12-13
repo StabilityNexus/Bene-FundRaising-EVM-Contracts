@@ -43,6 +43,7 @@ contract FundingVault is ERC20 {
     error DeadlineNotPassed(); 
     error NotEnoughTokens(); 
     error OwnerOnly();
+    error FundsAlreadyWithdrawn();
 
 
     // State Variables //
@@ -60,6 +61,7 @@ contract FundingVault is ERC20 {
     string public projectTitle; // Name of the Project
     string public projectDescription; // Short description of the project
     uint256 private amountRaised; // Variable to know if minimum funding raised or not
+    bool private fundsWithdrawn; // Guard to prevent repeated withdrawals
 
 
     /** 
@@ -123,6 +125,7 @@ contract FundingVault is ERC20 {
         projectURL = _projectURL;
         projectTitle = _projectTitle;
         projectDescription = _projectDescription;
+        fundsWithdrawn = false;
     }
 
     
@@ -193,12 +196,20 @@ contract FundingVault is ERC20 {
      * @dev Allows Project owners to withdraw funding tokens if and only if the minimum funding amount has been reached.
      */
     function withdrawFunds() external onlyOwner {
+        // Guard: prevent repeated withdrawals
+        if (fundsWithdrawn) revert FundsAlreadyWithdrawn();
+        
+        // Ensure deadline has passed
+        if (block.timestamp < timestamp) revert DeadlineNotPassed();
     
         if (amountRaised < minFundingAmount) revert MinFundingAmountNotReached();
 
         uint256 fundsCollected = fundingToken.balanceOf(address(this));
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
+
+        // Set flag before transfers to prevent re-entrancy
+        fundsWithdrawn = true;
 
         fundingToken.safeTransfer(developerFeeAddress, developerFee);
 
@@ -212,7 +223,7 @@ contract FundingVault is ERC20 {
      * @param UnsoldTokenAmount amount to withdraw
     */
      function withdrawUnsoldTokens(uint256 UnsoldTokenAmount) external onlyOwner {
-        if (proofOfFundingToken.balanceOf(address(this)) < UnsoldTokenAmount) revert NotEnoughTokens();
+        if (proofOfFundingToken.balanceOf(address(this)) - totalSupply() < UnsoldTokenAmount) revert NotEnoughTokens();
         
         proofOfFundingToken.safeTransfer(withdrawalAddress, UnsoldTokenAmount);
      }
