@@ -134,8 +134,8 @@ contract FundingVault is ERC20 {
 
         uint256 tokenAmount = msg.value * exchangeRate;
 
-        if (proofOfFundingToken.balanceOf(address(this)) - totalSupply() < tokenAmount) revert NotEnoughTokens();
-        proofOfFundingToken.safeTransfer(msg.sender,tokenAmount);
+        if (proofOfFundingToken.balanceOf(address(this)) < tokenAmount) revert NotEnoughTokens();
+        _mint(msg.sender, tokenAmount);
 
         amountRaised = amountRaised + msg.value;
         
@@ -196,7 +196,7 @@ contract FundingVault is ERC20 {
      function withdrawUnsoldTokens(uint256 UnsoldTokenAmount) external onlyOwner {
         if (proofOfFundingToken.balanceOf(address(this)) - totalSupply() < UnsoldTokenAmount) revert NotEnoughTokens();
         
-        proofOfFundingToken.safeTransferFrom(address(this),withdrawalAddress,UnsoldTokenAmount);
+        proofOfFundingToken.safeTransfer(withdrawalAddress,UnsoldTokenAmount);
        
      }
 
