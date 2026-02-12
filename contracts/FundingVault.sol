@@ -1,237 +1,213 @@
 // SPDX-License-Identifier: AEL
-
-/**
- * Layout of the contract
- * version
- * imports
- * errors
- * interfaces, libraries, and contracts
- * type declarations
- * state variables
- * events
- * modifiers
- * functions
- *
- * layout of functions
- * constructor
- * receive function
- * fallback function
- * external functions
- * public functions
- * internal functions
- * private functions
- * view functions
- * pure functions
- * getters
- */
 pragma solidity ^0.8.18;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title FundingVault
  * @author Muhammad Zain Nasir
- * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
+ * @notice ERC20-based fundraising vault with generic token support
  */
 contract FundingVault is ERC20 {
+    using SafeERC20 for IERC20;
 
-    // Errors //
+    // ---------------- Errors ----------------
     error MinFundingAmountReached();
     error MinFundingAmountNotReached();
-    error DeadlineNotPassed(); 
-    error NotEnoughTokens(); 
-    error EthTransferFailed();
-    error EthTransferToDeveloperFailed();
-    error EthTransferToWithdrawalFailed();
+    error DeadlineNotPassed();
+    error NotEnoughTokens();
     error OwnerOnly();
 
+    // ---------------- State Variables ----------------
 
-    // State Variables //
-    using SafeERC20 for IERC20;
-    IERC20 public immutable proofOfFundingToken; // The token that will be used as proof-of-funding token to incentivise contributions
-    uint256 public proofOfFundingTokenAmount; // The initial  proof-of-funding token amount which will be in fundingVault
-    uint256 public timestamp; // The date limit until which withdrawal or after which refund is allowed.
-    uint256 public immutable minFundingAmount; // The minimum amount of ETH required in the contract to enable withdrawal.
-    uint256 public exchangeRate; // The exchange rate of ETH per token
-    address public withdrawalAddress; // WithdrawalAddress is also considered as owner of the Vault. 
-    address private developerFeeAddress; // Developer address
-    uint256 private developerFeePercentage; // Developer percentage in funds collected
-    string  public projectURL; // A link or hash containing the project's information (e.g., GitHub repository).
-    string public projectTitle; // Name of the Project
-    string public projectDescription; // Short description of the project
-    uint256 private amountRaised; // Variable to know if minimum funding raised or not
+    IERC20 public immutable fundingToken;          // ERC20 token used for fundraising (USDT, DAI, etc.)
+    IERC20 public immutable proofOfFundingToken;   // ERC20 reward token
 
+    uint256 public proofOfFundingTokenAmount;
+    uint256 public immutable minFundingAmount;
+    uint256 public timestamp;
+    uint256 public exchangeRate;
 
-    /** 
-    * @dev A vault is represented as a struct  
-    */ 
+    address public withdrawalAddress;
+    address public developerFeeAddress;
+    uint256 public developerFeePercentage;
+
+    string public projectURL;
+    string public projectTitle;
+    string public projectDescription;
+
+    uint256 public amountRaised;
+
+    // ---------------- Struct ----------------
 
     struct Vault {
-        address withdrawalAddress;
+        address fundingToken;
         address proofOfFundingToken;
-        uint256 proofOfFundingTokenAmount;  
+        uint256 proofOfFundingTokenAmount;
         uint256 minFundingAmount;
         uint256 timestamp;
         uint256 exchangeRate;
+        address withdrawalAddress;
         string projectURL;
         string projectTitle;
         string projectDescription;
     }
-    
 
-    // Events //
-    event TokensPurchased(address indexed from, uint256 indexed amount);
-    event Refund(address indexed user, uint256 indexed amount);
-    event FundsWithdrawn(address indexed user, uint256 amount);
+    // ---------------- Events ----------------
 
+    event TokensPurchased(address indexed user, uint256 fundingAmount, uint256 rewardAmount);
+    event Refund(address indexed user, uint256 fundingAmount);
+    event FundsWithdrawn(address indexed owner, uint256 amount);
 
-    // Modifiers //
+    // ---------------- Modifiers ----------------
 
-    modifier onlyOwner {
-        if (msg.sender != withdrawalAddress)  revert OwnerOnly();
+    modifier onlyOwner() {
+        if (msg.sender != withdrawalAddress) revert OwnerOnly();
         _;
     }
 
+    // ---------------- Constructor ----------------
 
-    // Functions //
-    
-     constructor (
-        address _proofOfFundingToken, // The token that will be used as proof-of-funding token to incentivise contributions
-        uint256 _proofOfFundingTokenAmount,  // The initial  proof-of-funding token amount which will be in fundingVault
-        uint256 _minFundingAmount, // The minimum amount required to make withdraw of funds possible
-        uint256 _timestamp, // The date (block height) limit until which withdrawal or after which refund is allowed.
-        uint256 _exchangeRate, // The exchange rate of eth per token. 
-        address _withdrawalAddress, // The address for withdrawal of funds
-        address _developerFeeAddress, // The address for the developer fee
-        uint256 _developerFeePercentage, // The percentage fee for the developer.
-        string memory _projectURL, // A link or hash containing the project's information (e.g., GitHub repository).
-        string memory _projectTitle, // Name of the Project
-        string memory _projectDescription // Short description of the project
-    )ERC20("Voucher", "VCHR") {
-        
-        proofOfFundingToken  = IERC20(_proofOfFundingToken);
-        proofOfFundingTokenAmount  = _proofOfFundingTokenAmount ;
+    constructor(
+        address _fundingToken,
+        address _proofOfFundingToken,
+        uint256 _proofOfFundingTokenAmount,
+        uint256 _minFundingAmount,
+        uint256 _timestamp,
+        uint256 _exchangeRate,
+        address _withdrawalAddress,
+        address _developerFeeAddress,
+        uint256 _developerFeePercentage,
+        string memory _projectURL,
+        string memory _projectTitle,
+        string memory _projectDescription
+    ) ERC20("Voucher", "VCHR") {
+        fundingToken = IERC20(_fundingToken);
+        proofOfFundingToken = IERC20(_proofOfFundingToken);
+
+        proofOfFundingTokenAmount = _proofOfFundingTokenAmount;
         minFundingAmount = _minFundingAmount;
         timestamp = _timestamp;
         exchangeRate = _exchangeRate;
+
         withdrawalAddress = _withdrawalAddress;
-        developerFeeAddress =  _developerFeeAddress;
+        developerFeeAddress = _developerFeeAddress;
         developerFeePercentage = _developerFeePercentage;
+
         projectURL = _projectURL;
         projectTitle = _projectTitle;
         projectDescription = _projectDescription;
-        projectTitle = _projectTitle;
-        projectDescription = _projectDescription;
     }
 
-    
+    // ---------------- External Functions ----------------
+
     /**
-     * @dev Allows users to deposit Ether and purchase proof-of-funding token based on exchange rate
+     * @notice Fund the project using ERC20 tokens
+     * @param fundingAmount Amount of ERC20 funding token
      */
-    function purchaseTokens() external payable {
+    function purchaseTokens(uint256 fundingAmount) external {
+        require(fundingAmount > 0, "Invalid amount");
 
-        uint256 tokenAmount = msg.value * exchangeRate;
+        uint256 rewardAmount = fundingAmount * exchangeRate;
 
-        if (proofOfFundingToken.balanceOf(address(this)) - totalSupply() < tokenAmount) revert NotEnoughTokens();
-        proofOfFundingToken.safeTransfer(msg.sender,tokenAmount);
+        if (
+            proofOfFundingToken.balanceOf(address(this)) - totalSupply()
+            < rewardAmount
+        ) revert NotEnoughTokens();
 
-        amountRaised = amountRaised + msg.value;
-        
-        emit TokensPurchased(msg.sender, tokenAmount);
+        fundingToken.safeTransferFrom(
+            msg.sender,
+            address(this),
+            fundingAmount
+        );
+
+        proofOfFundingToken.safeTransfer(msg.sender, rewardAmount);
+
+        amountRaised += fundingAmount;
+
+        emit TokensPurchased(msg.sender, fundingAmount, rewardAmount);
     }
 
     /**
-     * @dev Allows users to exchange tokens for Eth (at exchange rate) if and only if the deadline has passed and the minimum number of tokens has not been sold.
+     * @notice Refund users if minimum funding not reached
      */
-
-    function refundTokens() external payable{
-
-        if (block.timestamp < timestamp)  revert DeadlineNotPassed();
-        
+    function refundTokens() external {
+        if (block.timestamp < timestamp) revert DeadlineNotPassed();
         if (amountRaised >= minFundingAmount) revert MinFundingAmountReached();
-        
+
         uint256 voucherAmount = balanceOf(msg.sender);
         uint256 refundAmount = voucherAmount / exchangeRate;
 
         _burn(msg.sender, voucherAmount);
-       
-        (bool ethTransferSuccess, ) = payable(msg.sender).call{value: refundAmount}("");
 
-        if (!ethTransferSuccess)   revert EthTransferFailed(); 
-        
-        emit Refund(msg.sender, refundAmount);       
+        fundingToken.safeTransfer(msg.sender, refundAmount);
+
+        emit Refund(msg.sender, refundAmount);
     }
 
     /**
-     * @dev Allows Project owners to withdraw Eth if and only if the minimum number of tokens has been sold.
-     
+     * @notice Withdraw raised funds (project owner)
      */
-
     function withdrawFunds() external onlyOwner {
-    
         if (amountRaised < minFundingAmount) revert MinFundingAmountNotReached();
 
-        uint256 fundsCollected = address(this).balance;
-        uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
-        uint256 amountToWithdraw = fundsCollected - developerFee;
+        uint256 totalFunds = fundingToken.balanceOf(address(this));
+        uint256 developerFee = (totalFunds * developerFeePercentage) / 100;
+        uint256 ownerAmount = totalFunds - developerFee;
 
-        (bool successA, ) = payable(developerFeeAddress).call{value: developerFee}("");
+        fundingToken.safeTransfer(developerFeeAddress, developerFee);
+        fundingToken.safeTransfer(withdrawalAddress, ownerAmount);
 
-        if (!successA) revert EthTransferToDeveloperFailed();
-
-        (bool successB, ) = payable(withdrawalAddress).call{value: amountToWithdraw}("");
-
-        if (!successB) revert EthTransferToWithdrawalFailed();
-
-        emit FundsWithdrawn(msg.sender, amountToWithdraw);
+        emit FundsWithdrawn(msg.sender, ownerAmount);
     }
 
     /**
-     * @dev Allows Project owners to withdraw unsold tokens from the contract at any time.
-     * @param UnsoldTokenAmount amount to withdraw
-    */
+     * @notice Withdraw unsold reward tokens
+     */
+    function withdrawUnsoldTokens(uint256 amount) external onlyOwner {
+        if (
+            proofOfFundingToken.balanceOf(address(this)) - totalSupply()
+            < amount
+        ) revert NotEnoughTokens();
 
-     function withdrawUnsoldTokens(uint256 UnsoldTokenAmount) external onlyOwner {
-        if (proofOfFundingToken.balanceOf(address(this)) - totalSupply() < UnsoldTokenAmount) revert NotEnoughTokens();
-        
-        proofOfFundingToken.safeTransferFrom(address(this),withdrawalAddress,UnsoldTokenAmount);
-       
-     }
-
-     /**
-     * @dev Allows Project owners to  add more tokens to the contract at any time.
-     * @param additionalTokens amount to add
-    */
-    function addTokens(uint256 additionalTokens) external onlyOwner {
-        proofOfFundingToken.safeTransferFrom(msg.sender,address(this),additionalTokens);
+        proofOfFundingToken.safeTransfer(withdrawalAddress, amount);
     }
 
+    /**
+     * @notice Add more reward tokens
+     */
+    function addTokens(uint256 amount) external onlyOwner {
+        proofOfFundingToken.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    /**
+     * @notice Redeem voucher tokens for reward tokens after deadline
+     */
     function redeem() external {
-        if (block.timestamp < timestamp)  revert DeadlineNotPassed();
+        if (block.timestamp < timestamp) revert DeadlineNotPassed();
+
         uint256 voucherAmount = balanceOf(msg.sender);
-        _burn(msg.sender,voucherAmount);
+        _burn(msg.sender, voucherAmount);
+
         proofOfFundingToken.safeTransfer(msg.sender, voucherAmount);
     }
 
-    /**
-     * @notice Get funding vault details
-     * @dev to access all necessary parameters of the funding vault
-     */ 
-    function getVault() external view returns(Vault memory)
-    {
-        Vault memory VaultDetails;
-        VaultDetails.withdrawalAddress = withdrawalAddress;
-        VaultDetails.proofOfFundingToken  = address(proofOfFundingToken);
-        VaultDetails.proofOfFundingTokenAmount  = proofOfFundingTokenAmount ;
-        VaultDetails.minFundingAmount = minFundingAmount;
-        VaultDetails.timestamp = timestamp;
-        VaultDetails.exchangeRate = exchangeRate;
-        VaultDetails.projectURL = projectURL;
-        VaultDetails.projectTitle = projectTitle;
-        VaultDetails.projectDescription = projectDescription;
-        return VaultDetails;
-    }
+    // ---------------- View Functions ----------------
 
+    function getVault() external view returns (Vault memory) {
+        return Vault({
+            fundingToken: address(fundingToken),
+            proofOfFundingToken: address(proofOfFundingToken),
+            proofOfFundingTokenAmount: proofOfFundingTokenAmount,
+            minFundingAmount: minFundingAmount,
+            timestamp: timestamp,
+            exchangeRate: exchangeRate,
+            withdrawalAddress: withdrawalAddress,
+            projectURL: projectURL,
+            projectTitle: projectTitle,
+            projectDescription: projectDescription
+        });
+    }
 }
