@@ -67,8 +67,9 @@ contract FundingVaultFactory{
 
     /**
      * @param _proofOfFundingToken The token that will be used as proof-of-funding token to incentivise donators
+     * @param _fundingToken The ERC20 token used for funding the vault
      * @param _proofOfFundingTokenAmount The initial  proof-of-funding token amount which will be in fundingVault
-     * @param _minFundingAmount The minimum amount required to make withdraw of funds possible
+     * @param _minFundingAmount The minimum amount of funding tokens required to make withdraw of funds possible
      * @param _timestamp The date (block height) limit until which withdrawal or after which refund is allowed.
      * @param _withdrawalAddress The address for withdrawal of funds
      * @param _developerFeeAddress the address for the developer fee
@@ -77,6 +78,7 @@ contract FundingVaultFactory{
      */
     function deployFundingVault (
         address _proofOfFundingToken,
+        address _fundingToken,
         uint256 _proofOfFundingTokenAmount,  
         uint256 _minFundingAmount,
         uint256 _timestamp,
@@ -88,7 +90,7 @@ contract FundingVaultFactory{
         string memory _projectTitle,
         string memory _projectDescription
     ) external returns (address) {
-        if (_proofOfFundingToken == address(0) || _withdrawalAddress == address(0) || _developerFeeAddress == address(0))  revert CannotBeAZeroAddress();
+        if (_proofOfFundingToken == address(0) || _fundingToken == address(0) || _withdrawalAddress == address(0) || _developerFeeAddress == address(0))  revert CannotBeAZeroAddress();
 
         if (block.timestamp > _timestamp) revert deadlineCannotBeInThePast();
         
@@ -102,6 +104,7 @@ contract FundingVaultFactory{
 
         FundingVault fundingVault = new FundingVault (
         _proofOfFundingToken,
+        _fundingToken,
         _proofOfFundingTokenAmount,  
         _minFundingAmount,
         _timestamp,
