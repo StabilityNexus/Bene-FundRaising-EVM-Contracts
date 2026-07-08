@@ -118,8 +118,10 @@ contract FundingVaultERC20 is ERC20 {
             proofOfFundingToken.balanceOf(address(this)) - totalSupply() <
             tokenAmount
         ) revert NotEnoughTokens();
+
+        fundingToken.safeTransferFrom(msg.sender, address(this), fundingAmount);
         _mint(msg.sender, tokenAmount);
-        amountRaised = amountRaised + tokenAmount;
+        amountRaised = amountRaised + fundingAmount;
 
         emit TokensPurchased(msg.sender, tokenAmount);
     }
@@ -128,7 +130,7 @@ contract FundingVaultERC20 is ERC20 {
      * @dev Allows users to exchange tokens for Eth (at exchange rate) if and only if the deadline has passed and the minimum number of tokens has not been sold.
      */
 
-    function refundTokens() external payable {
+    function refundTokens() external {
         if (block.timestamp < timestamp) revert DeadlineNotPassed();
 
         if (amountRaised >= minFundingAmount) revert MinFundingAmountReached();
@@ -137,6 +139,7 @@ contract FundingVaultERC20 is ERC20 {
         uint256 refundAmount = voucherAmount / exchangeRate;
 
         _burn(msg.sender, voucherAmount);
+        amountRaised = amountRaised - voucherAmount;
 
         fundingToken.safeTransfer(msg.sender, refundAmount);
 
@@ -176,11 +179,7 @@ contract FundingVaultERC20 is ERC20 {
             UnsoldTokenAmount
         ) revert NotEnoughTokens();
 
-        proofOfFundingToken.safeTransferFrom(
-            address(this),
-            withdrawalAddress,
-            UnsoldTokenAmount
-        );
+        proofOfFundingToken.safeTransfer(withdrawalAddress, UnsoldTokenAmount);
     }
 
     /**

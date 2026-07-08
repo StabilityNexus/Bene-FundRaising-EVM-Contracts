@@ -41,6 +41,8 @@ contract FundingVaultFactory {
     error deadlineCannotBeInThePast();
     error MinFundingAmountCanNotBeZero();
     error InvalidIndex();
+    error ExchangeRateCanNotBeZero();
+    error InvalidFeePercentage();
 
     //Type declarations
     struct Vault {
@@ -84,6 +86,9 @@ contract FundingVaultFactory {
             revert deadlineCannotBeInThePast();
 
         if (config.minFundingAmount == 0) revert MinFundingAmountCanNotBeZero();
+
+        if (config.exchangeRate == 0) revert ExchangeRateCanNotBeZero();
+        if (config.developerFeePercentage > 100) revert InvalidFeePercentage();
 
         s_fundingVaultIdCounter++;
         uint256 fundingVaultId = s_fundingVaultIdCounter;
@@ -136,3 +141,39 @@ contract FundingVaultFactory {
         return s_fundingVaultIdCounter;
     }
 }
+
+/**
+
+[
+    "0xD7ACd2a9FD159E69Bb102A1ca21C9a3e3A5F771B", 
+    "0x0000000000000000000000000000000000000000",
+    100000,                                    
+    100,                        
+    1830384000,                                  
+    10,                                       
+    "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2", 
+    "0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db",
+    5,                                          
+    "https://github.com/zain171m/bene",         
+    "Test Project",                              
+    "Testing FundingVault deployment"            
+]
+
+
+
+[
+    "0xD7ACd2a9FD159E69Bb102A1ca21C9a3e3A5F771B", 
+    "0xd7B63981A38ACEB507354DF5b51945bacbe28414",
+    100000,                                    
+    100,                        
+    1830384000,                                  
+    10,                                       
+    "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2", 
+    "0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db",
+    5,                                          
+    "https://github.com/zain171m/bene",         
+    "Test Project",                              
+    "Testing FundingVault deployment"            
+]
+
+*/
