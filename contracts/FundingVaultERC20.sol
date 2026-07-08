@@ -32,7 +32,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {VaultTypes} from "./VaultTypes.sol";
 
 /**
- * @title FundingVault
+ * @title FundingVaultERC20
  * @author Muhammad Zain Nasir
  * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
  */
@@ -139,7 +139,7 @@ contract FundingVaultERC20 is ERC20 {
         uint256 refundAmount = voucherAmount / exchangeRate;
 
         _burn(msg.sender, voucherAmount);
-        amountRaised = amountRaised - voucherAmount;
+        amountRaised = amountRaised - refundAmount;
 
         fundingToken.safeTransfer(msg.sender, refundAmount);
 

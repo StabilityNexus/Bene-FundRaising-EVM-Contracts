@@ -137,7 +137,7 @@ contract FundingVault is ERC20 {
         uint256 refundAmount = voucherAmount / exchangeRate;
 
         _burn(msg.sender, voucherAmount);
-        amountRaised = amountRaised - voucherAmount;
+        amountRaised = amountRaised - refundAmount;
 
         (bool ethTransferSuccess, ) = payable(msg.sender).call{
             value: refundAmount
