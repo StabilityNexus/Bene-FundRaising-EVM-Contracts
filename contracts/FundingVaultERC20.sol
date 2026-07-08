@@ -36,20 +36,21 @@ import {VaultTypes} from "./VaultTypes.sol";
  * @author Muhammad Zain Nasir
  * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
  */
-contract FundingVault is ERC20 {
+contract FundingVaultERC20 is ERC20 {
     // Errors //
     error MinFundingAmountReached();
     error MinFundingAmountNotReached();
     error DeadlineNotPassed();
     error NotEnoughTokens();
-    error EthTransferFailed();
-    error EthTransferToDeveloperFailed();
-    error EthTransferToWithdrawalFailed();
+    //error EthTransferFailed();
+    //error EthTransferToDeveloperFailed();
+    //error EthTransferToWithdrawalFailed();
     error OwnerOnly();
 
     // State Variables //
     using SafeERC20 for IERC20;
     IERC20 public immutable proofOfFundingToken; // The token that will be used as proof-of-funding token to incentivise contributions
+    IERC20 public immutable fundingToken;
     uint256 public proofOfFundingTokenAmount; // The initial  proof-of-funding token amount which will be in fundingVault
     uint256 public timestamp; // The date limit until which withdrawal or after which refund is allowed.
     uint256 public immutable minFundingAmount; // The minimum amount of ETH required in the contract to enable withdrawal.
@@ -94,6 +95,7 @@ contract FundingVault is ERC20 {
 
     constructor(VaultTypes.VaultConfig memory config) ERC20("Voucher", "VCHR") {
         proofOfFundingToken = IERC20(config.proofOfFundingToken);
+        fundingToken = IERC20(config.fundingToken);
         proofOfFundingTokenAmount = config.proofOfFundingTokenAmount;
         minFundingAmount = config.minFundingAmount;
         timestamp = config.timestamp;
@@ -107,19 +109,17 @@ contract FundingVault is ERC20 {
     }
 
     /**
-     * @dev Allows users to deposit Ether and purchase proof-of-funding token based on exchange rate
+     * @dev Allows users to deposit ERC20 funding Token and purchase proof-of-funding token based on exchange rate
      */
-    function purchaseTokens() external payable {
-        uint256 tokenAmount = msg.value * exchangeRate;
+    function purchaseTokens(uint256 fundingAmount) external {
+        uint256 tokenAmount = fundingAmount * exchangeRate;
 
         if (
             proofOfFundingToken.balanceOf(address(this)) - totalSupply() <
             tokenAmount
         ) revert NotEnoughTokens();
         _mint(msg.sender, tokenAmount);
-        //proofOfFundingToken.safeTransfer(msg.sender,tokenAmount);
-
-        amountRaised = amountRaised + msg.value;
+        amountRaised = amountRaised + tokenAmount;
 
         emit TokensPurchased(msg.sender, tokenAmount);
     }
@@ -138,17 +138,13 @@ contract FundingVault is ERC20 {
 
         _burn(msg.sender, voucherAmount);
 
-        (bool ethTransferSuccess, ) = payable(msg.sender).call{
-            value: refundAmount
-        }("");
-
-        if (!ethTransferSuccess) revert EthTransferFailed();
+        fundingToken.safeTransfer(msg.sender, refundAmount);
 
         emit Refund(msg.sender, refundAmount);
     }
 
     /**
-     * @dev Allows Project owners to withdraw Eth if and only if the minimum number of tokens has been sold.
+     * @dev Allows Project owners to withdraw ERC20 funding Tokens if and only if the minimum number of tokens has been sold.
      
      */
 
@@ -156,21 +152,13 @@ contract FundingVault is ERC20 {
         if (amountRaised < minFundingAmount)
             revert MinFundingAmountNotReached();
 
-        uint256 fundsCollected = address(this).balance;
+        uint256 fundsCollected = fundingToken.balanceOf(address(this));
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
 
-        (bool successA, ) = payable(developerFeeAddress).call{
-            value: developerFee
-        }("");
+        fundingToken.safeTransfer(developerFeeAddress, developerFee);
 
-        if (!successA) revert EthTransferToDeveloperFailed();
-
-        (bool successB, ) = payable(withdrawalAddress).call{
-            value: amountToWithdraw
-        }("");
-
-        if (!successB) revert EthTransferToWithdrawalFailed();
+        fundingToken.safeTransfer(withdrawalAddress, amountToWithdraw);
 
         emit FundsWithdrawn(msg.sender, amountToWithdraw);
     }
