@@ -27,8 +27,10 @@ pragma solidity ^0.8.28;
 import {FundingVault} from "./FundingVault.sol";
 import {FundingVaultERC20} from "./FundingVaultERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {VaultTypes} from "./VaultTypes.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import { IFundingVault } from "./IFundingVault.sol";
 
 /**
  * @title FundingVaultFactory
@@ -57,8 +59,11 @@ contract FundingVaultFactory {
     mapping(uint256 => Vault) public vaults;
 
     using SafeERC20 for IERC20;
+    using Clones for address;
     //IERC20 private proofOfFundingToken;
     uint256 private s_fundingVaultIdCounter;
+    address public immutable FundingVaultImplementation;
+    address public immutable ERC20FundingVaultImplementation;
 
     // Events //
     event FundingVaultDeployed(address indexed fundingVault);
@@ -69,6 +74,12 @@ contract FundingVaultFactory {
     );
 
     // Functions //
+
+
+    constructor() {
+    FundingVaultImplementation = address(new FundingVault());
+    ERC20FundingVaultImplementation = address(new FundingVaultERC20());
+}
 
     /**
      * @notice Deploys a new funding vault.
@@ -95,13 +106,14 @@ contract FundingVaultFactory {
         uint256 fundingVaultId = s_fundingVaultIdCounter;
         IERC20 proofOfFundingToken = IERC20(config.proofOfFundingToken);
 
-        address vaultAddress;
+        address implementation =
+            config.fundingToken == address(0)
+                ? FundingVaultImplementation
+                : ERC20FundingVaultImplementation;
 
-        if (config.fundingToken == address(0)) {
-            vaultAddress = address(new FundingVault(config));
-        } else {
-            vaultAddress = address(new FundingVaultERC20(config));
-        }
+        address vaultAddress = implementation.clone();
+
+        IFundingVault(vaultAddress).initialize(config);
 
         proofOfFundingToken.safeTransferFrom(
             msg.sender,
