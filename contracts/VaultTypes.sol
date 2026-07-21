@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AEL
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.28;
 
 library VaultTypes {
     /**
      * @notice Configuration used to deploy a funding vault.
      * @param proofOfFundingToken The token used as proof-of-funding.
-     * @param fundingToken The ERC20 token used for funding (e.g., DAI, USDC).
      * @param proofOfFundingTokenAmount Initial amount of proof-of-funding tokens deposited into the vault.
      * @param minFundingAmount Minimum amount required before funds can be withdrawn.
      * @param timestamp Deadline after which refunds are possible if the funding goal is not reached.

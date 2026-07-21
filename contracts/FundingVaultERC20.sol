@@ -24,7 +24,7 @@
  * pure functions
  * getters
  */
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -32,7 +32,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {VaultTypes} from "./VaultTypes.sol";
 
 /**
- * @title FundingVaultERC20
+ * @title FundingVault
  * @author Muhammad Zain Nasir
  * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
  */
@@ -70,6 +70,7 @@ contract FundingVaultERC20 is ERC20 {
     struct Vault {
         address withdrawalAddress;
         address proofOfFundingToken;
+        address fundingToken;
         uint256 proofOfFundingTokenAmount;
         uint256 minFundingAmount;
         uint256 timestamp;
@@ -209,6 +210,7 @@ contract FundingVaultERC20 is ERC20 {
         Vault memory VaultDetails;
         VaultDetails.withdrawalAddress = withdrawalAddress;
         VaultDetails.proofOfFundingToken = address(proofOfFundingToken);
+        VaultDetails.fundingToken = address(fundingToken);
         VaultDetails.proofOfFundingTokenAmount = proofOfFundingTokenAmount;
         VaultDetails.minFundingAmount = minFundingAmount;
         VaultDetails.timestamp = timestamp;

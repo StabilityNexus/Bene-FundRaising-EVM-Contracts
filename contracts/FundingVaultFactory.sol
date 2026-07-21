@@ -22,7 +22,7 @@
  * getters
  */
 
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.28;
 
 import {FundingVault} from "./FundingVault.sol";
 import {FundingVaultERC20} from "./FundingVaultERC20.sol";
@@ -50,6 +50,7 @@ contract FundingVaultFactory {
         string title;
         string description;
         uint256 deadline;
+        bool isERC20;
     }
 
     // State Variables //
@@ -113,6 +114,7 @@ contract FundingVaultFactory {
         vault.title = config.projectTitle;
         vault.description = config.projectDescription;
         vault.deadline = config.timestamp;
+        vault.isERC20 = config.fundingToken != address(0);
 
         emit FundingVaultDeployed(vaultAddress);
         return vaultAddress;
@@ -141,39 +143,3 @@ contract FundingVaultFactory {
         return s_fundingVaultIdCounter;
     }
 }
-
-/**
-
-[
-    "0xD7ACd2a9FD159E69Bb102A1ca21C9a3e3A5F771B", 
-    "0x0000000000000000000000000000000000000000",
-    100000,                                    
-    100,                        
-    1830384000,                                  
-    10,                                       
-    "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2", 
-    "0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db",
-    5,                                          
-    "https://github.com/zain171m/bene",         
-    "Test Project",                              
-    "Testing FundingVault deployment"            
-]
-
-
-
-[
-    "0xD7ACd2a9FD159E69Bb102A1ca21C9a3e3A5F771B", 
-    "0xd7B63981A38ACEB507354DF5b51945bacbe28414",
-    100000,                                    
-    100,                        
-    1830384000,                                  
-    10,                                       
-    "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2", 
-    "0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db",
-    5,                                          
-    "https://github.com/zain171m/bene",         
-    "Test Project",                              
-    "Testing FundingVault deployment"            
-]
-
-*/
