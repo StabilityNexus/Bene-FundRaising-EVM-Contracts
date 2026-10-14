@@ -32,12 +32,12 @@ const deployFundingVaultFactory: DeployFunction = async function (hre: HardhatRu
   });
 
   // Get the deployed contract to interact with it after deploying.
-  const yourContract = await hre.ethers.getContract<Contract>("FundingVaultFactory", deployer);
-  console.log("👋 Initial number of vaults:", await yourContract.getTotalNumberOfFundingVaults());
+  const fundingVaultFactory = await hre.ethers.getContract<Contract>("FundingVaultFactory", deployer);
+  console.log("👋 Initial number of vaults:", await fundingVaultFactory.getTotalNumberOfFundingVaults());
 };
 
 export default deployFundingVaultFactory;
 
 // Tags are useful if you have multiple deploy files and only want to run one of them.
-// e.g. yarn deploy --tags YourContract
-deployFundingVaultFactory.tags = ["YourContract"];
+// e.g. yarn deploy --tags FundingVaultFactory
+deployFundingVaultFactory.tags = ["FundingVaultFactory"];
