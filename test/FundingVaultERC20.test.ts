@@ -136,6 +136,47 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
     });
   });
 
+  describe("accounting counters", function () {
+    it("should start with nothing sold, nothing refunded and the minimum not reached", async function () {
+      const { vault } = await loadFixture(deployERC20VaultFixture);
+
+      expect(await vault.totalSold()).to.equal(0n);
+      expect(await vault.totalRefunded()).to.equal(0n);
+      expect(await vault.minimumReached()).to.equal(false);
+    });
+
+    it("should add every purchase to totalSold", async function () {
+      const { vault, fundingToken, alice, bob } = await loadFixture(deployERC20VaultFixture);
+
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await contribute(vault, fundingToken, bob, 2n * ONE_TOKEN);
+
+      expect(await vault.totalSold()).to.equal(3n * ONE_TOKEN);
+    });
+
+    it("should count refunds in totalRefunded and leave totalSold untouched", async function () {
+      const { vault, fundingToken, alice, bob, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await contribute(vault, fundingToken, bob, 3n * ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+
+      await vault.connect(bob).refundTokens();
+
+      expect(await vault.totalSold()).to.equal(4n * ONE_TOKEN);
+      expect(await vault.totalRefunded()).to.equal(3n * ONE_TOKEN);
+    });
+
+    it("should report the minimum reached exactly when sold minus refunded reaches it", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+
+      await contribute(vault, fundingToken, alice, MIN_FUNDING - 1n);
+      expect(await vault.minimumReached()).to.equal(false);
+
+      await contribute(vault, fundingToken, alice, 1n);
+      expect(await vault.minimumReached()).to.equal(true);
+    });
+  });
+
   describe("refundTokens", function () {
     it("should refund the contribution when the campaign failed", async function () {
       const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);

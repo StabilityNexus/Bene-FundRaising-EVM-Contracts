@@ -127,6 +127,47 @@ describe("FundingVault (native ETH funding)", function () {
     });
   });
 
+  describe("accounting counters", function () {
+    it("should start with nothing sold, nothing refunded and the minimum not reached", async function () {
+      const { vault } = await loadFixture(deployNativeVaultFixture);
+
+      expect(await vault.totalSold()).to.equal(0n);
+      expect(await vault.totalRefunded()).to.equal(0n);
+      expect(await vault.minimumReached()).to.equal(false);
+    });
+
+    it("should add every purchase to totalSold", async function () {
+      const { vault, alice, bob } = await loadFixture(deployNativeVaultFixture);
+
+      await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+      await vault.connect(bob).purchaseTokens({ value: 2n * ONE_ETH });
+
+      expect(await vault.totalSold()).to.equal(3n * ONE_ETH);
+    });
+
+    it("should count refunds in totalRefunded and leave totalSold untouched", async function () {
+      const { vault, alice, bob, deadline } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+      await vault.connect(bob).purchaseTokens({ value: 3n * ONE_ETH });
+      await time.increaseTo(deadline + 1);
+
+      await vault.connect(bob).refundTokens();
+
+      expect(await vault.totalSold()).to.equal(4n * ONE_ETH);
+      expect(await vault.totalRefunded()).to.equal(3n * ONE_ETH);
+    });
+
+    it("should report the minimum reached exactly when sold minus refunded reaches it", async function () {
+      const { vault, alice } = await loadFixture(deployNativeVaultFixture);
+
+      await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING - 1n });
+      expect(await vault.minimumReached()).to.equal(false);
+
+      await vault.connect(alice).purchaseTokens({ value: 1n });
+      expect(await vault.minimumReached()).to.equal(true);
+    });
+  });
+
   describe("refundTokens", function () {
     it("should refund the contribution when the campaign failed", async function () {
       const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
