@@ -84,6 +84,9 @@ contract FundingVault is ERC20 {
     event TokensPurchased(address indexed from, uint256 indexed amount);
     event Refund(address indexed user, uint256 indexed amount);
     event FundsWithdrawn(address indexed user, uint256 amount);
+    event Redeemed(address indexed user, uint256 amount);
+    event TokensAdded(address indexed owner, uint256 amount);
+    event UnsoldTokensWithdrawn(address indexed owner, uint256 amount);
     event WithdrawalCredited(address indexed recipient, uint256 amount);
     event PendingWithdrawalClaimed(
         address indexed account,
@@ -208,6 +211,8 @@ contract FundingVault is ERC20 {
         ) revert NotEnoughTokens();
 
         proofOfFundingToken.safeTransfer(withdrawalAddress, UnsoldTokenAmount);
+
+        emit UnsoldTokensWithdrawn(msg.sender, UnsoldTokenAmount);
     }
 
     /**
@@ -220,6 +225,8 @@ contract FundingVault is ERC20 {
             address(this),
             additionalTokens
         );
+
+        emit TokensAdded(msg.sender, additionalTokens);
     }
 
     /**
@@ -230,6 +237,8 @@ contract FundingVault is ERC20 {
         uint256 voucherAmount = balanceOf(msg.sender);
         _burn(msg.sender, voucherAmount);
         proofOfFundingToken.safeTransfer(msg.sender, voucherAmount);
+
+        emit Redeemed(msg.sender, voucherAmount);
     }
 
     /**
