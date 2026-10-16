@@ -279,22 +279,35 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       expect(await vault.totalSupply()).to.equal(0n);
     });
 
-    it("should fail when the deadline has not passed", async function () {
-      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+    it("should let contributors redeem as soon as the minimum is reached, before the deadline", async function () {
+      const { vault, fundingToken, pft, alice } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
 
-      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+      await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, MIN_FUNDING * EXCHANGE_RATE);
     });
 
-    it("should let a contributor redeem PFT even though the campaign failed (known issue)", async function () {
-      const { vault, fundingToken, pft, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+    it("should fail when the minimum funding amount was not reached, before the deadline", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING - 1n);
+
+      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+    });
+
+    it("should fail when the minimum funding amount was not reached, even after the deadline", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, ONE_TOKEN);
       await time.increaseTo(deadline + 1);
 
-      await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, ONE_TOKEN * EXCHANGE_RATE);
+      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+    });
 
-      await expect(vault.connect(alice).refundTokens()).to.changeTokenBalance(fundingToken, alice, 0n);
-      expect(await fundingToken.balanceOf(await vault.getAddress())).to.equal(ONE_TOKEN);
+    it("should keep the refund available to a contributor who could not redeem a failed campaign", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+      await expect(vault.connect(alice).redeem()).to.be.reverted;
+
+      await expect(vault.connect(alice).refundTokens()).to.changeTokenBalance(fundingToken, alice, ONE_TOKEN);
     });
   });
 

@@ -314,23 +314,35 @@ describe("FundingVault (native ETH funding)", function () {
       await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, 0n);
     });
 
-    it("should fail when the deadline has not passed", async function () {
-      const { vault, alice } = await loadFixture(deployNativeVaultFixture);
+    it("should let contributors redeem as soon as the minimum is reached, before the deadline", async function () {
+      const { vault, pft, alice } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
 
-      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+      await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, MIN_FUNDING * EXCHANGE_RATE);
     });
 
-    it("should let a contributor redeem PFT even though the campaign failed (known issue)", async function () {
-      const { vault, pft, alice, deadline } = await loadFixture(deployNativeVaultFixture);
+    it("should fail when the minimum funding amount was not reached, before the deadline", async function () {
+      const { vault, alice } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING - 1n });
+
+      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+    });
+
+    it("should fail when the minimum funding amount was not reached, even after the deadline", async function () {
+      const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
       await time.increaseTo(deadline + 1);
 
-      await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, ONE_ETH * EXCHANGE_RATE);
+      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+    });
 
-      // The refund right is burned with the vouchers and the ETH stays in the vault.
-      await expect(vault.connect(alice).refundTokens()).to.changeEtherBalance(alice, 0n);
-      expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(ONE_ETH);
+    it("should keep the refund available to a contributor who could not redeem a failed campaign", async function () {
+      const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+      await time.increaseTo(deadline + 1);
+      await expect(vault.connect(alice).redeem()).to.be.reverted;
+
+      await expect(vault.connect(alice).refundTokens()).to.changeEtherBalance(alice, ONE_ETH);
     });
   });
 
