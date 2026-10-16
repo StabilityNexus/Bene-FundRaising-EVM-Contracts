@@ -206,13 +206,15 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     }
 
     /**
-     * @dev Allows Project owners to withdraw unsold tokens from the contract at any time.
+     * @dev Allows Project owners to withdraw unsold tokens from the contract once the deadline has passed.
      * @param UnsoldTokenAmount amount to withdraw
      */
 
     function withdrawUnsoldTokens(
         uint256 UnsoldTokenAmount
     ) external onlyOwner {
+        if (block.timestamp <= timestamp) revert DeadlineNotPassed();
+
         if (
             proofOfFundingToken.balanceOf(address(this)) - totalSupply() <
             UnsoldTokenAmount
