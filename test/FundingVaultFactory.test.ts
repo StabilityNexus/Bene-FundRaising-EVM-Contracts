@@ -125,6 +125,13 @@ describe("FundingVaultFactory", function () {
       await expect(factory.deployFundingVault(config)).to.be.revertedWithCustomError(factory, "CannotBeAZeroAddress");
     });
 
+    it("should fail when the funding token is the same as the proof-of-funding token", async function () {
+      const { factory, pft, base } = await validBase();
+      const config = await buildConfig(base, { fundingToken: await pft.getAddress() });
+
+      await expect(factory.deployFundingVault(config)).to.be.reverted;
+    });
+
     it("should fail when the deadline is in the past", async function () {
       const { factory, base } = await validBase();
       const config = await buildConfig(base, { timestamp: (await time.latest()) - 1 });
