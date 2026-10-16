@@ -130,7 +130,7 @@ contract FundingVault is ERC20 {
      */
 
     function refundTokens() external {
-        if (block.timestamp < timestamp) revert DeadlineNotPassed();
+        if (block.timestamp <= timestamp) revert DeadlineNotPassed();
 
         if (minimumReached()) revert MinFundingAmountReached();
 
