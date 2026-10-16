@@ -224,6 +224,28 @@ export async function deployRejectingDeveloperVaultFixture() {
   return { ...base, rejecter, vault, config, deadline: config.timestamp };
 }
 
+/**
+ * A native-ETH vault whose withdrawal address (so its owner) and developer fee
+ * address are both the same contract, which calls back into the vault while
+ * withdrawFunds is paying it. It has to be the owner too, or onlyOwner would
+ * reject the re-entrant call before any reentrancy guard ran.
+ */
+export async function deployReentrantDeveloperVaultFixture() {
+  const base = await deployFactoryFixture();
+  const { factory, pft, owner } = base;
+  const attacker = await (await ethers.getContractFactory("ReentrantFeeReceiver")).deploy();
+  await attacker.waitForDeployment();
+  const attackerAddress = await attacker.getAddress();
+  const config = await buildConfig({
+    proofOfFundingToken: await pft.getAddress(),
+    withdrawalAddress: attackerAddress,
+    developerFeeAddress: attackerAddress,
+  });
+  const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
+  const vault = await ethers.getContractAt("FundingVault", vaultAddress);
+  return { ...base, attacker, vault, config, deadline: config.timestamp };
+}
+
 /** A native-ETH vault whose withdrawal address (and so its owner) is a contract that rejects ETH. */
 export async function deployRejectingOwnerVaultFixture() {
   const base = await deployFactoryFixture();

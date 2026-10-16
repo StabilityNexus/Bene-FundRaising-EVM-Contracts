@@ -9,6 +9,7 @@ import {
   DEVELOPER_FEE_PERCENTAGE,
   buildConfig,
   deployNativeVaultFixture,
+  deployReentrantDeveloperVaultFixture,
 } from "./fixtures";
 
 describe("FundingVault (native ETH funding)", function () {
@@ -407,6 +408,70 @@ describe("FundingVault (native ETH funding)", function () {
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
       await expect(vault.withdrawFunds()).to.changeEtherBalance(owner, MIN_FUNDING - fee);
+    });
+  });
+
+  describe("reentrancy guard", function () {
+    // Same selector the OpenZeppelin ReentrancyGuard reverts with. Each re-entrant call below would
+    // revert with a different error (or succeed) if the guard were missing, so matching it proves the
+    // guard, not some other check, stopped the call.
+    const GUARD_SELECTOR = ethers.id("ReentrancyGuardReentrantCall()").slice(0, 10);
+
+    async function reentrantWithdrawalSetup() {
+      const fixture = await loadFixture(deployReentrantDeveloperVaultFixture);
+      await fixture.vault.connect(fixture.alice).purchaseTokens({ value: MIN_FUNDING });
+      return fixture;
+    }
+
+    it("should block a developer fee address from re-entering withdrawFunds", async function () {
+      const { vault, attacker } = await reentrantWithdrawalSetup();
+      const reenter = vault.interface.encodeFunctionData("withdrawFunds");
+
+      await attacker.attack(await vault.getAddress(), reenter);
+
+      expect(await attacker.attempted()).to.equal(true);
+      expect(await attacker.reentrySucceeded()).to.equal(false);
+      expect(await attacker.reentryRevertData()).to.equal(GUARD_SELECTOR);
+    });
+
+    it("should pay out exactly once and leave no phantom credit after a blocked re-entry", async function () {
+      const { vault, attacker } = await reentrantWithdrawalSetup();
+      const reenter = vault.interface.encodeFunctionData("withdrawFunds");
+
+      await expect(attacker.attack(await vault.getAddress(), reenter)).to.changeEtherBalance(attacker, MIN_FUNDING);
+
+      expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
+      expect(await vault.pendingWithdrawals(await attacker.getAddress())).to.equal(0n);
+    });
+
+    it("should not leave a credit that could later be claimed out of other depositors' funds", async function () {
+      const { vault, attacker, bob } = await reentrantWithdrawalSetup();
+      await attacker.attack(await vault.getAddress(), vault.interface.encodeFunctionData("withdrawFunds"));
+      await vault.connect(bob).purchaseTokens({ value: MIN_FUNDING });
+
+      await attacker.callVault(vault.interface.encodeFunctionData("claimPending", [await attacker.getAddress()]));
+
+      expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(MIN_FUNDING);
+    });
+
+    it("should block re-entering claimPending while withdrawFunds is in flight", async function () {
+      const { vault, attacker } = await reentrantWithdrawalSetup();
+      const reenter = vault.interface.encodeFunctionData("claimPending", [await attacker.getAddress()]);
+
+      await attacker.attack(await vault.getAddress(), reenter);
+
+      expect(await attacker.reentrySucceeded()).to.equal(false);
+      expect(await attacker.reentryRevertData()).to.equal(GUARD_SELECTOR);
+    });
+
+    it("should block re-entering refundTokens while withdrawFunds is in flight", async function () {
+      const { vault, attacker } = await reentrantWithdrawalSetup();
+      const reenter = vault.interface.encodeFunctionData("refundTokens");
+
+      await attacker.attack(await vault.getAddress(), reenter);
+
+      expect(await attacker.reentrySucceeded()).to.equal(false);
+      expect(await attacker.reentryRevertData()).to.equal(GUARD_SELECTOR);
     });
   });
 
