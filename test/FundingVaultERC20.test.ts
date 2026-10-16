@@ -232,6 +232,40 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
     });
   });
 
+  describe("events for redeem, addTokens and withdrawUnsoldTokens", function () {
+    it("should emit Redeemed with the user and the PFT redeemed", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+
+      const tx = await vault.connect(alice).redeem();
+
+      await expect(tx)
+        .to.emit(vault, "Redeemed")
+        .withArgs(alice.address, MIN_FUNDING * EXCHANGE_RATE);
+    });
+
+    it("should emit TokensAdded with the owner and the amount added", async function () {
+      const { vault, pft, owner } = await loadFixture(deployERC20VaultFixture);
+      const extra = ethers.parseEther("100");
+      await pft.approve(await vault.getAddress(), extra);
+
+      const tx = await vault.addTokens(extra);
+
+      await expect(tx).to.emit(vault, "TokensAdded").withArgs(owner.address, extra);
+    });
+
+    it("should emit UnsoldTokensWithdrawn with the owner and the amount withdrawn", async function () {
+      const { vault, fundingToken, owner, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+      const unsold = PFT_AMOUNT - ONE_TOKEN * EXCHANGE_RATE;
+
+      const tx = await vault.withdrawUnsoldTokens(unsold);
+
+      await expect(tx).to.emit(vault, "UnsoldTokensWithdrawn").withArgs(owner.address, unsold);
+    });
+  });
+
   describe("refundTokens", function () {
     it("should refund the contribution when the campaign failed", async function () {
       const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
