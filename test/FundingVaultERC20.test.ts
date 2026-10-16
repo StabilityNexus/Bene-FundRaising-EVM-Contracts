@@ -403,15 +403,54 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
   });
 
   describe("with a fee-on-transfer funding token", function () {
-    it("should credit the full amount even though the vault receives less (known issue)", async function () {
+    it("should credit only the amount the vault actually received", async function () {
       const { vault, feeToken, alice } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
       const amount = ethers.parseEther("100");
+      const received = (amount * 99n) / 100n;
       await feeToken.connect(alice).approve(await vault.getAddress(), amount);
 
       await vault.connect(alice).purchaseTokens(amount);
 
-      expect(await feeToken.balanceOf(await vault.getAddress())).to.equal((amount * 99n) / 100n);
-      expect(await vault.balanceOf(alice.address)).to.equal(amount * EXCHANGE_RATE);
+      expect(await feeToken.balanceOf(await vault.getAddress())).to.equal(received);
+      expect(await vault.balanceOf(alice.address)).to.equal(received * EXCHANGE_RATE);
+      expect(await vault.totalSold()).to.equal(received);
+    });
+
+    it("should emit TokensPurchased with the vouchers minted for the received amount", async function () {
+      const { vault, feeToken, alice } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
+      const amount = ethers.parseEther("100");
+      const received = (amount * 99n) / 100n;
+      await feeToken.connect(alice).approve(await vault.getAddress(), amount);
+
+      await expect(vault.connect(alice).purchaseTokens(amount))
+        .to.emit(vault, "TokensPurchased")
+        .withArgs(alice.address, received * EXCHANGE_RATE);
+    });
+
+    it("should be able to refund every contributor of a failed campaign in full", async function () {
+      const { vault, feeToken, alice, bob, deadline } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
+      const amount = 4n * ONE_TOKEN;
+      for (const buyer of [alice, bob]) {
+        await feeToken.connect(buyer).approve(await vault.getAddress(), amount);
+        await vault.connect(buyer).purchaseTokens(amount);
+      }
+      await time.increaseTo(deadline + 1);
+
+      await vault.connect(alice).refundTokens();
+      await expect(vault.connect(bob).refundTokens()).to.not.be.reverted;
+
+      expect(await feeToken.balanceOf(await vault.getAddress())).to.equal(0n);
+      expect(await vault.totalSupply()).to.equal(0n);
+    });
+
+    it("should not reach the minimum on funding the vault never received", async function () {
+      const { vault, feeToken, alice } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
+      const amount = MIN_FUNDING; // nominally enough, but 1% is lost in transfer
+      await feeToken.connect(alice).approve(await vault.getAddress(), amount);
+
+      await vault.connect(alice).purchaseTokens(amount);
+
+      expect(await vault.minimumReached()).to.equal(false);
     });
   });
 
