@@ -29,6 +29,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {VaultTypes} from "./VaultTypes.sol";
 
 /**
@@ -36,7 +37,7 @@ import {VaultTypes} from "./VaultTypes.sol";
  * @author Muhammad Zain Nasir
  * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
  */
-contract FundingVault is ERC20 {
+contract FundingVault is ERC20, ReentrancyGuard {
     // Errors //
     error MinFundingAmountReached();
     error MinFundingAmountNotReached();
@@ -119,7 +120,7 @@ contract FundingVault is ERC20 {
     /**
      * @dev Allows users to deposit Ether and purchase proof-of-funding token based on exchange rate
      */
-    function purchaseTokens() external payable {
+    function purchaseTokens() external payable nonReentrant {
         uint256 tokenAmount = msg.value * exchangeRate;
 
         if (
@@ -138,7 +139,7 @@ contract FundingVault is ERC20 {
      * @dev Allows users to exchange tokens for Eth (at exchange rate) if and only if the deadline has passed and the minimum number of tokens has not been sold.
      */
 
-    function refundTokens() external {
+    function refundTokens() external nonReentrant {
         if (block.timestamp <= timestamp) revert DeadlineNotPassed();
 
         if (minimumReached()) revert MinFundingAmountReached();
@@ -164,7 +165,7 @@ contract FundingVault is ERC20 {
      * pendingWithdrawals instead and can be claimed with claimPending.
      */
 
-    function withdrawFunds() external onlyOwner {
+    function withdrawFunds() external onlyOwner nonReentrant {
         if (!minimumReached()) revert MinFundingAmountNotReached();
 
         uint256 fundsCollected = address(this).balance - totalPending;
@@ -182,7 +183,7 @@ contract FundingVault is ERC20 {
      * be able to receive ETH itself, so it can name a different address.
      * @param to address that receives the credited amount
      */
-    function claimPending(address payable to) external {
+    function claimPending(address payable to) external nonReentrant {
         if (to == address(0)) revert ZeroAddressRecipient();
 
         uint256 amount = pendingWithdrawals[msg.sender];
