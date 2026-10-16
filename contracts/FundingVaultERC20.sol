@@ -29,6 +29,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {VaultTypes} from "./VaultTypes.sol";
 
 /**
@@ -36,7 +37,7 @@ import {VaultTypes} from "./VaultTypes.sol";
  * @author Muhammad Zain Nasir
  * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
  */
-contract FundingVaultERC20 is ERC20 {
+contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     // Errors //
     error MinFundingAmountReached();
     error MinFundingAmountNotReached();
@@ -113,7 +114,7 @@ contract FundingVaultERC20 is ERC20 {
     /**
      * @dev Allows users to deposit ERC20 funding Token and purchase proof-of-funding token based on exchange rate
      */
-    function purchaseTokens(uint256 fundingAmount) external {
+    function purchaseTokens(uint256 fundingAmount) external nonReentrant {
         uint256 tokenAmount = fundingAmount * exchangeRate;
 
         if (
@@ -132,7 +133,7 @@ contract FundingVaultERC20 is ERC20 {
      * @dev Allows users to exchange tokens for Eth (at exchange rate) if and only if the deadline has passed and the minimum number of tokens has not been sold.
      */
 
-    function refundTokens() external {
+    function refundTokens() external nonReentrant {
         if (block.timestamp <= timestamp) revert DeadlineNotPassed();
 
         if (minimumReached()) revert MinFundingAmountReached();
@@ -153,7 +154,7 @@ contract FundingVaultERC20 is ERC20 {
      
      */
 
-    function withdrawFunds() external onlyOwner {
+    function withdrawFunds() external onlyOwner nonReentrant {
         if (!minimumReached()) revert MinFundingAmountNotReached();
 
         uint256 fundsCollected = fundingToken.balanceOf(address(this));
@@ -198,7 +199,7 @@ contract FundingVaultERC20 is ERC20 {
     /**
      * @dev Allows contributors to exchange vouchers for proof-of-funding tokens as soon as the minimum funding amount has been reached.
      */
-    function redeem() external {
+    function redeem() external nonReentrant {
         if (!minimumReached()) revert MinFundingAmountNotReached();
         uint256 voucherAmount = balanceOf(msg.sender);
         _burn(msg.sender, voucherAmount);

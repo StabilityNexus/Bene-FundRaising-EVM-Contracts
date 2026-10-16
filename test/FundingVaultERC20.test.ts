@@ -421,7 +421,7 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       const amount = ethers.parseEther("60");
 
       // 60 funding units at rate 10 need 600 PFT; the vault holds 1000, so each call passes the capacity check alone.
-      await expect(attacker.attack(amount, 1)).to.be.reverted;
+      await expect(attacker.attack(amount, 1)).to.be.revertedWithCustomError(vault, "ReentrancyGuardReentrantCall");
 
       expect(await vault.totalSupply()).to.equal(0n);
       expect(await pft.balanceOf(await vault.getAddress())).to.equal(PFT_AMOUNT);
