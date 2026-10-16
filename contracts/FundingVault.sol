@@ -50,7 +50,6 @@ contract FundingVault is ERC20 {
     // State Variables //
     using SafeERC20 for IERC20;
     IERC20 public immutable proofOfFundingToken; // The token that will be used as proof-of-funding token to incentivise contributions
-    uint256 public proofOfFundingTokenAmount; // The initial  proof-of-funding token amount which will be in fundingVault
     uint256 public timestamp; // The date limit until which withdrawal or after which refund is allowed.
     uint256 public immutable minFundingAmount; // The minimum amount of ETH required in the contract to enable withdrawal.
     uint256 public exchangeRate; // The exchange rate of ETH per token
@@ -103,7 +102,6 @@ contract FundingVault is ERC20 {
 
     constructor(VaultTypes.VaultConfig memory config) ERC20("Voucher", "VCHR") {
         proofOfFundingToken = IERC20(config.proofOfFundingToken);
-        proofOfFundingTokenAmount = config.proofOfFundingTokenAmount;
         minFundingAmount = config.minFundingAmount;
         timestamp = config.timestamp;
         exchangeRate = config.exchangeRate;
@@ -250,6 +248,16 @@ contract FundingVault is ERC20 {
     }
 
     /**
+     * @notice The proof-of-funding tokens the vault currently holds: those reserved for outstanding
+     * vouchers plus the unsold remainder.
+     * @dev Read from the token balance rather than stored, so it cannot go stale after addTokens,
+     * withdrawUnsoldTokens or redeem, and it is correct even when the token charges a transfer fee.
+     */
+    function proofOfFundingTokenAmount() public view returns (uint256) {
+        return proofOfFundingToken.balanceOf(address(this));
+    }
+
+    /**
      * @notice Whether the net funding (sold minus refunded) has reached the minimum.
      * @dev Refunds are only possible while this is false, so once it turns true it stays true.
      */
@@ -265,7 +273,7 @@ contract FundingVault is ERC20 {
         Vault memory VaultDetails;
         VaultDetails.withdrawalAddress = withdrawalAddress;
         VaultDetails.proofOfFundingToken = address(proofOfFundingToken);
-        VaultDetails.proofOfFundingTokenAmount = proofOfFundingTokenAmount;
+        VaultDetails.proofOfFundingTokenAmount = proofOfFundingTokenAmount();
         VaultDetails.minFundingAmount = minFundingAmount;
         VaultDetails.timestamp = timestamp;
         VaultDetails.exchangeRate = exchangeRate;
