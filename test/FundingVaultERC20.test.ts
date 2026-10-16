@@ -416,16 +416,15 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
   });
 
   describe("with an ERC777-style funding token", function () {
-    it("should let a hook re-enter purchaseTokens and mint more vouchers than the vault holds PFT (known issue)", async function () {
+    it("should block a hook from re-entering purchaseTokens so vouchers never exceed the PFT held", async function () {
       const { vault, pft, attacker } = await loadFixture(deployHookFundingVaultFixture);
       const amount = ethers.parseEther("60");
 
-      // 60 funding units at rate 10 need 600 PFT; the vault holds 1000, and each call passes the check alone.
-      await attacker.attack(amount, 1);
+      // 60 funding units at rate 10 need 600 PFT; the vault holds 1000, so each call passes the capacity check alone.
+      await expect(attacker.attack(amount, 1)).to.be.reverted;
 
-      const vouchers = await vault.balanceOf(await attacker.getAddress());
-      expect(vouchers).to.equal(2n * amount * EXCHANGE_RATE);
-      expect(vouchers).to.be.gt(await pft.balanceOf(await vault.getAddress()));
+      expect(await vault.totalSupply()).to.equal(0n);
+      expect(await pft.balanceOf(await vault.getAddress())).to.equal(PFT_AMOUNT);
     });
 
     it("should mint normally when the hook does not re-enter", async function () {
