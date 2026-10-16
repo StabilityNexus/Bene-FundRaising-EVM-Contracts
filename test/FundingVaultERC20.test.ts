@@ -273,6 +273,30 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await expect(vault.connect(alice).withdrawFunds()).to.be.revertedWithCustomError(vault, "OwnerOnly");
     });
 
+    it("should be callable again after more contributions arrive following a full withdrawal", async function () {
+      const { vault, fundingToken, owner, developer, alice, bob } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      await vault.withdrawFunds();
+      expect(await fundingToken.balanceOf(await vault.getAddress())).to.equal(0n);
+
+      await contribute(vault, fundingToken, bob, 2n * ONE_TOKEN);
+      const fee = (2n * ONE_TOKEN * DEVELOPER_FEE_PERCENTAGE) / 100n;
+
+      await expect(vault.withdrawFunds()).to.changeTokenBalances(
+        fundingToken,
+        [owner, developer, vault],
+        [2n * ONE_TOKEN - fee, fee, -2n * ONE_TOKEN],
+      );
+    });
+
+    it("should pay nothing and not fail when called again with no new funds", async function () {
+      const { vault, fundingToken, owner, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      await vault.withdrawFunds();
+
+      await expect(vault.withdrawFunds()).to.changeTokenBalance(fundingToken, owner, 0n);
+    });
+
     it("should allow withdrawal before the deadline once the minimum is reached (current behavior)", async function () {
       const { vault, fundingToken, owner, alice } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);

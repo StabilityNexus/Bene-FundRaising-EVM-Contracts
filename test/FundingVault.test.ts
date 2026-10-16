@@ -289,6 +289,29 @@ describe("FundingVault (native ETH funding)", function () {
       await expect(vault.connect(alice).withdrawFunds()).to.be.revertedWithCustomError(vault, "OwnerOnly");
     });
 
+    it("should be callable again after more contributions arrive following a full withdrawal", async function () {
+      const { vault, owner, developer, alice, bob } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
+      await vault.withdrawFunds();
+      expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
+
+      await vault.connect(bob).purchaseTokens({ value: 2n * ONE_ETH });
+      const fee = (2n * ONE_ETH * DEVELOPER_FEE_PERCENTAGE) / 100n;
+
+      await expect(vault.withdrawFunds()).to.changeEtherBalances(
+        [owner, developer, vault],
+        [2n * ONE_ETH - fee, fee, -2n * ONE_ETH],
+      );
+    });
+
+    it("should pay nothing and not fail when called again with no new funds", async function () {
+      const { vault, owner, alice } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
+      await vault.withdrawFunds();
+
+      await expect(vault.withdrawFunds()).to.changeEtherBalance(owner, 0n);
+    });
+
     it("should allow withdrawal before the deadline once the minimum is reached (current behavior)", async function () {
       const { vault, owner, alice } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
