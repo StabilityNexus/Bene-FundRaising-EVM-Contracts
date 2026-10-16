@@ -511,16 +511,39 @@ describe("FundingVault (native ETH funding)", function () {
 
   describe("withdrawUnsoldTokens", function () {
     it("should let the owner withdraw all unsold PFT", async function () {
-      const { vault, pft, owner, alice } = await loadFixture(deployNativeVaultFixture);
+      const { vault, pft, owner, alice, deadline } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+      await time.increaseTo(deadline + 1);
       const unsold = PFT_AMOUNT - ONE_ETH * EXCHANGE_RATE;
 
       await expect(vault.withdrawUnsoldTokens(unsold)).to.changeTokenBalances(pft, [vault, owner], [-unsold, unsold]);
     });
 
-    it("should fail when asking for more than the unsold PFT", async function () {
+    it("should fail when withdrawing unsold PFT before the deadline", async function () {
       const { vault, alice } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+
+      await expect(vault.withdrawUnsoldTokens(1n)).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should fail when withdrawing unsold PFT exactly at the deadline", async function () {
+      const { vault, deadline } = await loadFixture(deployNativeVaultFixture);
+      await time.setNextBlockTimestamp(deadline);
+
+      await expect(vault.withdrawUnsoldTokens(1n)).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should allow withdrawing unsold PFT one second after the deadline", async function () {
+      const { vault, pft, owner, deadline } = await loadFixture(deployNativeVaultFixture);
+      await time.setNextBlockTimestamp(deadline + 1);
+
+      await expect(vault.withdrawUnsoldTokens(1n)).to.changeTokenBalance(pft, owner, 1n);
+    });
+
+    it("should fail when asking for more than the unsold PFT", async function () {
+      const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+      await time.increaseTo(deadline + 1);
       const unsold = PFT_AMOUNT - ONE_ETH * EXCHANGE_RATE;
 
       await expect(vault.withdrawUnsoldTokens(unsold + 1n)).to.be.revertedWithCustomError(vault, "NotEnoughTokens");
@@ -535,8 +558,8 @@ describe("FundingVault (native ETH funding)", function () {
     it("should keep vouchers redeemable after the owner withdraws the unsold PFT", async function () {
       const { vault, pft, alice, deadline } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
-      await vault.withdrawUnsoldTokens(PFT_AMOUNT - MIN_FUNDING * EXCHANGE_RATE);
       await time.increaseTo(deadline + 1);
+      await vault.withdrawUnsoldTokens(PFT_AMOUNT - MIN_FUNDING * EXCHANGE_RATE);
 
       await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, MIN_FUNDING * EXCHANGE_RATE);
       expect(await pft.balanceOf(await vault.getAddress())).to.equal(0n);
