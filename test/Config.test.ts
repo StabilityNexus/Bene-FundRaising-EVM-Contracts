@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
@@ -15,8 +16,9 @@ function localEnvDefinesDeployerKey(): boolean {
 
 // Runs the hardhat CLI in a child process with the secrets unset unless they are passed in env.
 function runHardhat(args: string, env: Record<string, string>) {
-  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
+  const childEnv: NodeJS.ProcessEnv = { ...process.env };
   delete childEnv.HARDHAT_NETWORK;
+  Object.assign(childEnv, env);
   for (const name of ["DEPLOYER_PRIVATE_KEY", "ETHERSCAN_API_KEY"]) {
     if (!(name in env)) delete childEnv[name];
   }
@@ -51,6 +53,43 @@ describe("hardhat.config.ts secrets handling", function () {
       const result = runHardhat("compile --network sepolia", { DEPLOYER_PRIVATE_KEY: PUBLIC_TEST_KEY });
 
       expect(result.status, `${result.stdout}${result.stderr}`).to.equal(0);
+    });
+  });
+
+  describe("account scripts on a live network", function () {
+    // yarn generate and yarn account are how a developer gets the key in the first place, so the
+    // key requirement must not block them (HARDHAT_NETWORK=sepolia selects a live network).
+    beforeEach(function () {
+      if (localEnvDefinesDeployerKey()) this.skip();
+    });
+
+    it("should let yarn generate create a deployer key when none exists", function () {
+      const envFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bene-generate-")), ".env");
+      try {
+        const result = runHardhat("run scripts/generateAccount.ts", {
+          HARDHAT_NETWORK: "sepolia",
+          ENV_FILE_PATH: envFile,
+        });
+
+        expect(result.status, `${result.stdout}${result.stderr}`).to.equal(0);
+        expect(fs.readFileSync(envFile, "utf8")).to.match(/DEPLOYER_PRIVATE_KEY=0x[0-9a-fA-F]{64}/);
+      } finally {
+        fs.rmSync(path.dirname(envFile), { recursive: true, force: true });
+      }
+    });
+
+    it("should let yarn account report a missing key instead of being blocked by the guard", function () {
+      const result = runHardhat("run scripts/listAccount.ts", { HARDHAT_NETWORK: "sepolia" });
+
+      expect(result.status, `${result.stdout}${result.stderr}`).to.equal(0);
+      expect(result.stdout).to.contain("You don't have a deployer account");
+    });
+
+    it("should still require the key for any other script", function () {
+      const result = runHardhat("run scripts/someOtherScript.ts", { HARDHAT_NETWORK: "sepolia" });
+
+      expect(result.status).to.not.equal(0);
+      expect(`${result.stdout}${result.stderr}`).to.contain("DEPLOYER_PRIVATE_KEY is not set");
     });
   });
 
