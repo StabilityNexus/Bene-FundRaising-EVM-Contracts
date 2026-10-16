@@ -129,7 +129,10 @@ describe("FundingVaultFactory", function () {
       const { factory, pft, base } = await validBase();
       const config = await buildConfig(base, { fundingToken: await pft.getAddress() });
 
-      await expect(factory.deployFundingVault(config)).to.be.reverted;
+      await expect(factory.deployFundingVault(config)).to.be.revertedWithCustomError(
+        factory,
+        "FundingTokenSameAsProofOfFundingToken",
+      );
     });
 
     it("should fail when the deadline is in the past", async function () {
