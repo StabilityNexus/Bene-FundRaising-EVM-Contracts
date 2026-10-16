@@ -115,16 +115,22 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
      * @dev Allows users to deposit ERC20 funding Token and purchase proof-of-funding token based on exchange rate
      */
     function purchaseTokens(uint256 fundingAmount) external nonReentrant {
-        uint256 tokenAmount = fundingAmount * exchangeRate;
+        // Credit what the vault actually received: a fee-on-transfer funding
+        // token delivers less than fundingAmount.
+        uint256 balanceBefore = fundingToken.balanceOf(address(this));
+        fundingToken.safeTransferFrom(msg.sender, address(this), fundingAmount);
+        uint256 received = fundingToken.balanceOf(address(this)) -
+            balanceBefore;
+
+        uint256 tokenAmount = received * exchangeRate;
 
         if (
             proofOfFundingToken.balanceOf(address(this)) - totalSupply() <
             tokenAmount
         ) revert NotEnoughTokens();
 
-        fundingToken.safeTransferFrom(msg.sender, address(this), fundingAmount);
         _mint(msg.sender, tokenAmount);
-        totalSold = totalSold + fundingAmount;
+        totalSold = totalSold + received;
 
         emit TokensPurchased(msg.sender, tokenAmount);
     }
