@@ -43,8 +43,8 @@ contract FundingVault is ERC20 {
     error DeadlineNotPassed();
     error NotEnoughTokens();
     error EthTransferFailed();
-    error EthTransferToDeveloperFailed();
-    error EthTransferToWithdrawalFailed();
+    error NothingToClaim();
+    error ZeroAddressRecipient();
     error OwnerOnly();
 
     // State Variables //
@@ -62,6 +62,8 @@ contract FundingVault is ERC20 {
     string public projectDescription; // Short description of the project
     uint256 public totalSold; // Total funding ever received. Only ever increases.
     uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
+    mapping(address => uint256) public pendingWithdrawals; // Payouts that could not be sent and wait to be claimed.
+    uint256 private totalPending; // Sum of pendingWithdrawals, excluded from the next withdrawal.
 
     /**
      * @dev A vault is represented as a struct
@@ -83,6 +85,12 @@ contract FundingVault is ERC20 {
     event TokensPurchased(address indexed from, uint256 indexed amount);
     event Refund(address indexed user, uint256 indexed amount);
     event FundsWithdrawn(address indexed user, uint256 amount);
+    event WithdrawalCredited(address indexed recipient, uint256 amount);
+    event PendingWithdrawalClaimed(
+        address indexed account,
+        address indexed to,
+        uint256 amount
+    );
 
     // Modifiers //
 
@@ -151,29 +159,41 @@ contract FundingVault is ERC20 {
 
     /**
      * @dev Allows Project owners to withdraw Eth if and only if the minimum number of tokens has been sold.
-     
+     * A recipient that cannot receive the payout does not block the withdrawal: its share is credited to
+     * pendingWithdrawals instead and can be claimed with claimPending.
      */
 
     function withdrawFunds() external onlyOwner {
         if (!minimumReached()) revert MinFundingAmountNotReached();
 
-        uint256 fundsCollected = address(this).balance;
+        uint256 fundsCollected = address(this).balance - totalPending;
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
 
-        (bool successA, ) = payable(developerFeeAddress).call{
-            value: developerFee
-        }("");
-
-        if (!successA) revert EthTransferToDeveloperFailed();
-
-        (bool successB, ) = payable(withdrawalAddress).call{
-            value: amountToWithdraw
-        }("");
-
-        if (!successB) revert EthTransferToWithdrawalFailed();
+        _payOrCredit(developerFeeAddress, developerFee);
+        _payOrCredit(withdrawalAddress, amountToWithdraw);
 
         emit FundsWithdrawn(msg.sender, amountToWithdraw);
+    }
+
+    /**
+     * @dev Sends the caller's credited payout to the given address. The recipient of a credit may not
+     * be able to receive ETH itself, so it can name a different address.
+     * @param to address that receives the credited amount
+     */
+    function claimPending(address payable to) external {
+        if (to == address(0)) revert ZeroAddressRecipient();
+
+        uint256 amount = pendingWithdrawals[msg.sender];
+        if (amount == 0) revert NothingToClaim();
+
+        pendingWithdrawals[msg.sender] = 0;
+        totalPending = totalPending - amount;
+
+        (bool success, ) = to.call{value: amount}("");
+        if (!success) revert EthTransferFailed();
+
+        emit PendingWithdrawalClaimed(msg.sender, to, amount);
     }
 
     /**
@@ -212,6 +232,21 @@ contract FundingVault is ERC20 {
         uint256 voucherAmount = balanceOf(msg.sender);
         _burn(msg.sender, voucherAmount);
         proofOfFundingToken.safeTransfer(msg.sender, voucherAmount);
+    }
+
+    /**
+     * @dev Pays the amount to the recipient, or credits it to pendingWithdrawals if the transfer fails.
+     * Nothing is sent for a zero amount, so a zero fee never calls the developer address.
+     */
+    function _payOrCredit(address to, uint256 amount) private {
+        if (amount == 0) return;
+
+        (bool success, ) = payable(to).call{value: amount}("");
+        if (!success) {
+            pendingWithdrawals[to] = pendingWithdrawals[to] + amount;
+            totalPending = totalPending + amount;
+            emit WithdrawalCredited(to, amount);
+        }
     }
 
     /**
