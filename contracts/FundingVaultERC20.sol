@@ -195,8 +195,11 @@ contract FundingVaultERC20 is ERC20 {
         );
     }
 
+    /**
+     * @dev Allows contributors to exchange vouchers for proof-of-funding tokens as soon as the minimum funding amount has been reached.
+     */
     function redeem() external {
-        if (block.timestamp < timestamp) revert DeadlineNotPassed();
+        if (!minimumReached()) revert MinFundingAmountNotReached();
         uint256 voucherAmount = balanceOf(msg.sender);
         _burn(msg.sender, voucherAmount);
         proofOfFundingToken.safeTransfer(msg.sender, voucherAmount);
