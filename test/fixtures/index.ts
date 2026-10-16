@@ -207,3 +207,57 @@ export async function deployHookFundingVaultFixture() {
   await hookToken.mint(await attacker.getAddress(), ethers.parseEther("1000"));
   return { ...base, hookToken, attacker, vault, config, deadline: config.timestamp };
 }
+
+/** A native-ETH vault whose developer fee address is a contract that rejects ETH. */
+export async function deployRejectingDeveloperVaultFixture() {
+  const base = await deployFactoryFixture();
+  const { factory, pft, owner } = base;
+  const rejecter = await (await ethers.getContractFactory("RejectingReceiver")).deploy();
+  await rejecter.waitForDeployment();
+  const config = await buildConfig({
+    proofOfFundingToken: await pft.getAddress(),
+    withdrawalAddress: owner.address,
+    developerFeeAddress: await rejecter.getAddress(),
+  });
+  const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
+  const vault = await ethers.getContractAt("FundingVault", vaultAddress);
+  return { ...base, rejecter, vault, config, deadline: config.timestamp };
+}
+
+/** A native-ETH vault whose withdrawal address (and so its owner) is a contract that rejects ETH. */
+export async function deployRejectingOwnerVaultFixture() {
+  const base = await deployFactoryFixture();
+  const { factory, pft, owner, developer } = base;
+  const rejecter = await (await ethers.getContractFactory("RejectingReceiver")).deploy();
+  await rejecter.waitForDeployment();
+  const config = await buildConfig({
+    proofOfFundingToken: await pft.getAddress(),
+    withdrawalAddress: await rejecter.getAddress(),
+    developerFeeAddress: developer.address,
+  });
+  const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
+  const vault = await ethers.getContractAt("FundingVault", vaultAddress);
+  return { ...base, rejecter, vault, config, deadline: config.timestamp };
+}
+
+/** A FundingVaultERC20 funded in a token that can block recipients (like a blacklisting stablecoin). */
+export async function deployBlacklistFundingVaultFixture() {
+  const base = await deployFactoryFixture();
+  const { factory, pft, owner, developer, alice, bob } = base;
+  const blockable = await (await ethers.getContractFactory("MockBlacklistERC20")).deploy("Blockable", "BLK");
+  await blockable.waitForDeployment();
+  for (const holder of [alice, bob]) {
+    await blockable.mint(holder.address, CONTRIBUTOR_FUNDING_BALANCE);
+  }
+  const config = await buildConfig(
+    {
+      proofOfFundingToken: await pft.getAddress(),
+      withdrawalAddress: owner.address,
+      developerFeeAddress: developer.address,
+    },
+    { fundingToken: await blockable.getAddress() },
+  );
+  const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
+  const vault = await ethers.getContractAt("FundingVaultERC20", vaultAddress);
+  return { ...base, blockable, vault, config, deadline: config.timestamp };
+}
