@@ -1,5 +1,6 @@
 import * as dotenv from "dotenv";
 dotenv.config();
+import * as path from "path";
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-ethers";
 import "@nomicfoundation/hardhat-chai-matchers";
@@ -18,20 +19,34 @@ const etherscanApiKey = process.env.ETHERSCAN_API_KEY ?? "";
 const LOCAL_NETWORKS = ["hardhat", "localhost"];
 // Tasks that only talk to a block explorer and do not sign anything.
 const KEYLESS_TASKS = ["verify", "etherscan-verify"];
+// The scripts behind yarn generate and yarn account. They create or report the deployer key, so they cannot
+// require it. Matched by exact path, so no other script gets the exemption.
+const KEYLESS_SCRIPTS = ["scripts/generateAccount.ts", "scripts/listAccount.ts"].map(script =>
+  path.join(__dirname, script),
+);
 
-function cliTarget(): { network?: string; task?: string } {
+function cliTarget(): { network?: string; task?: string; script?: string } {
   const args = process.argv.slice(2);
   const networkFlag = args.indexOf("--network");
   const network = networkFlag >= 0 ? args[networkFlag + 1] : process.env.HARDHAT_NETWORK;
   const rest = networkFlag >= 0 ? args.filter((_, i) => i !== networkFlag && i !== networkFlag + 1) : args;
-  return { network, task: rest.find(arg => !arg.startsWith("-")) };
+  const positional = rest.filter(arg => !arg.startsWith("-"));
+  return { network, task: positional[0], script: positional[1] };
 }
 
-const { network: requestedNetwork, task: requestedTask } = cliTarget();
+function isKeylessRun(task?: string, script?: string): boolean {
+  if (task !== undefined && KEYLESS_TASKS.includes(task)) return true;
+  // The config is loaded twice for "hardhat run": once by the CLI ("run <script>"), and again inside the child
+  // process that executes the script, where argv[1] is the script itself and there is no task.
+  if (KEYLESS_SCRIPTS.includes(path.resolve(process.argv[1] ?? ""))) return true;
+  return task === "run" && script !== undefined && KEYLESS_SCRIPTS.includes(path.resolve(script));
+}
+
+const { network: requestedNetwork, task: requestedTask, script: requestedScript } = cliTarget();
 if (
   requestedNetwork &&
   !LOCAL_NETWORKS.includes(requestedNetwork) &&
-  !KEYLESS_TASKS.includes(requestedTask ?? "") &&
+  !isKeylessRun(requestedTask, requestedScript) &&
   !deployerPrivateKey
 ) {
   throw new Error(
