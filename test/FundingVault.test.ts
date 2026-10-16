@@ -214,6 +214,22 @@ describe("FundingVault (native ETH funding)", function () {
       await expect(vault.connect(alice).refundTokens()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
     });
 
+    it("should fail when refunding exactly at the deadline", async function () {
+      const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+      await time.setNextBlockTimestamp(deadline);
+
+      await expect(vault.connect(alice).refundTokens()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should allow refunding one second after the deadline", async function () {
+      const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: ONE_ETH });
+      await time.setNextBlockTimestamp(deadline + 1);
+
+      await expect(vault.connect(alice).refundTokens()).to.emit(vault, "Refund");
+    });
+
     it("should fail when the minimum funding amount was reached", async function () {
       const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });

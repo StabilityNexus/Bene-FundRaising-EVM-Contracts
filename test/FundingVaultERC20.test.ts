@@ -207,6 +207,22 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await expect(vault.connect(alice).refundTokens()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
     });
 
+    it("should fail when refunding exactly at the deadline", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.setNextBlockTimestamp(deadline);
+
+      await expect(vault.connect(alice).refundTokens()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should allow refunding one second after the deadline", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.setNextBlockTimestamp(deadline + 1);
+
+      await expect(vault.connect(alice).refundTokens()).to.emit(vault, "Refund");
+    });
+
     it("should fail when the minimum funding amount was reached", async function () {
       const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
