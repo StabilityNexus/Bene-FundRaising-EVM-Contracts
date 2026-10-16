@@ -1,4 +1,4 @@
-# Bene-EVM — PR Plan
+# Bene-EVM Production-Readiness Completion Plan
 
 Covering both `Bene-FundRaising-EVM-Contracts` and `Bene-FundRaising-EVM-Frontend`, working against the GSoC completion checklist.
 
