@@ -177,6 +177,61 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
     });
   });
 
+  describe("proofOfFundingTokenAmount tracks the vault's real PFT holdings", function () {
+    it("should equal the PFT deposited at creation", async function () {
+      const { vault } = await loadFixture(deployERC20VaultFixture);
+
+      expect(await vault.proofOfFundingTokenAmount()).to.equal(PFT_AMOUNT);
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT);
+    });
+
+    it("should be unchanged by purchases, which only reserve PFT for vouchers", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT);
+    });
+
+    it("should grow when the owner adds PFT", async function () {
+      const { vault, pft } = await loadFixture(deployERC20VaultFixture);
+      const extra = ethers.parseEther("100");
+      await pft.approve(await vault.getAddress(), extra);
+
+      await vault.addTokens(extra);
+
+      expect(await vault.proofOfFundingTokenAmount()).to.equal(PFT_AMOUNT + extra);
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT + extra);
+    });
+
+    it("should shrink when the owner withdraws unsold PFT", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+      const unsold = PFT_AMOUNT - ONE_TOKEN * EXCHANGE_RATE;
+
+      await vault.withdrawUnsoldTokens(unsold);
+
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT - unsold);
+    });
+
+    it("should shrink when vouchers are redeemed", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+
+      await vault.connect(alice).redeem();
+
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT - MIN_FUNDING * EXCHANGE_RATE);
+    });
+
+    it("should always equal the PFT balance the vault really holds", async function () {
+      const { vault, pft, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      await vault.connect(alice).redeem();
+
+      expect(await vault.proofOfFundingTokenAmount()).to.equal(await pft.balanceOf(await vault.getAddress()));
+    });
+  });
+
   describe("refundTokens", function () {
     it("should refund the contribution when the campaign failed", async function () {
       const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
