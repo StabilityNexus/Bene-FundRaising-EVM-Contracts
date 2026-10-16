@@ -60,7 +60,8 @@ contract FundingVault is ERC20 {
     string public projectURL; // A link or hash containing the project's information (e.g., GitHub repository).
     string public projectTitle; // Name of the Project
     string public projectDescription; // Short description of the project
-    uint256 private amountRaised; // Variable to know if minimum funding raised or not
+    uint256 public totalSold; // Total funding ever received. Only ever increases.
+    uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
 
     /**
      * @dev A vault is represented as a struct
@@ -119,7 +120,7 @@ contract FundingVault is ERC20 {
         _mint(msg.sender, tokenAmount);
         //proofOfFundingToken.safeTransfer(msg.sender,tokenAmount);
 
-        amountRaised = amountRaised + msg.value;
+        totalSold = totalSold + msg.value;
 
         emit TokensPurchased(msg.sender, tokenAmount);
     }
@@ -131,13 +132,13 @@ contract FundingVault is ERC20 {
     function refundTokens() external {
         if (block.timestamp < timestamp) revert DeadlineNotPassed();
 
-        if (amountRaised >= minFundingAmount) revert MinFundingAmountReached();
+        if (minimumReached()) revert MinFundingAmountReached();
 
         uint256 voucherAmount = balanceOf(msg.sender);
         uint256 refundAmount = voucherAmount / exchangeRate;
 
         _burn(msg.sender, voucherAmount);
-        amountRaised = amountRaised - refundAmount;
+        totalRefunded = totalRefunded + refundAmount;
 
         (bool ethTransferSuccess, ) = payable(msg.sender).call{
             value: refundAmount
@@ -154,8 +155,7 @@ contract FundingVault is ERC20 {
      */
 
     function withdrawFunds() external onlyOwner {
-        if (amountRaised < minFundingAmount)
-            revert MinFundingAmountNotReached();
+        if (!minimumReached()) revert MinFundingAmountNotReached();
 
         uint256 fundsCollected = address(this).balance;
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
@@ -209,6 +209,14 @@ contract FundingVault is ERC20 {
         uint256 voucherAmount = balanceOf(msg.sender);
         _burn(msg.sender, voucherAmount);
         proofOfFundingToken.safeTransfer(msg.sender, voucherAmount);
+    }
+
+    /**
+     * @notice Whether the net funding (sold minus refunded) has reached the minimum.
+     * @dev Refunds are only possible while this is false, so once it turns true it stays true.
+     */
+    function minimumReached() public view returns (bool) {
+        return totalSold - totalRefunded >= minFundingAmount;
     }
 
     /**
