@@ -29,6 +29,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {VaultTypes} from "./VaultTypes.sol";
 
 /**
@@ -36,21 +37,20 @@ import {VaultTypes} from "./VaultTypes.sol";
  * @author Muhammad Zain Nasir
  * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
  */
-contract FundingVault is ERC20 {
+contract FundingVault is ERC20, ReentrancyGuard {
     // Errors //
     error MinFundingAmountReached();
     error MinFundingAmountNotReached();
     error DeadlineNotPassed();
     error NotEnoughTokens();
     error EthTransferFailed();
-    error EthTransferToDeveloperFailed();
-    error EthTransferToWithdrawalFailed();
+    error NothingToClaim();
+    error ZeroAddressRecipient();
     error OwnerOnly();
 
     // State Variables //
     using SafeERC20 for IERC20;
     IERC20 public immutable proofOfFundingToken; // The token that will be used as proof-of-funding token to incentivise contributions
-    uint256 public proofOfFundingTokenAmount; // The initial  proof-of-funding token amount which will be in fundingVault
     uint256 public timestamp; // The date limit until which withdrawal or after which refund is allowed.
     uint256 public immutable minFundingAmount; // The minimum amount of ETH required in the contract to enable withdrawal.
     uint256 public exchangeRate; // The exchange rate of ETH per token
@@ -60,7 +60,10 @@ contract FundingVault is ERC20 {
     string public projectURL; // A link or hash containing the project's information (e.g., GitHub repository).
     string public projectTitle; // Name of the Project
     string public projectDescription; // Short description of the project
-    uint256 private amountRaised; // Variable to know if minimum funding raised or not
+    uint256 public totalSold; // Total funding ever received. Only ever increases.
+    uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
+    mapping(address => uint256) public pendingWithdrawals; // Payouts that could not be sent and wait to be claimed.
+    uint256 private totalPending; // Sum of pendingWithdrawals, excluded from the next withdrawal.
 
     /**
      * @dev A vault is represented as a struct
@@ -82,6 +85,15 @@ contract FundingVault is ERC20 {
     event TokensPurchased(address indexed from, uint256 indexed amount);
     event Refund(address indexed user, uint256 indexed amount);
     event FundsWithdrawn(address indexed user, uint256 amount);
+    event Redeemed(address indexed user, uint256 amount);
+    event TokensAdded(address indexed owner, uint256 amount);
+    event UnsoldTokensWithdrawn(address indexed owner, uint256 amount);
+    event WithdrawalCredited(address indexed recipient, uint256 amount);
+    event PendingWithdrawalClaimed(
+        address indexed account,
+        address indexed to,
+        uint256 amount
+    );
 
     // Modifiers //
 
@@ -94,7 +106,6 @@ contract FundingVault is ERC20 {
 
     constructor(VaultTypes.VaultConfig memory config) ERC20("Voucher", "VCHR") {
         proofOfFundingToken = IERC20(config.proofOfFundingToken);
-        proofOfFundingTokenAmount = config.proofOfFundingTokenAmount;
         minFundingAmount = config.minFundingAmount;
         timestamp = config.timestamp;
         exchangeRate = config.exchangeRate;
@@ -109,7 +120,7 @@ contract FundingVault is ERC20 {
     /**
      * @dev Allows users to deposit Ether and purchase proof-of-funding token based on exchange rate
      */
-    function purchaseTokens() external payable {
+    function purchaseTokens() external payable nonReentrant {
         uint256 tokenAmount = msg.value * exchangeRate;
 
         if (
@@ -119,7 +130,7 @@ contract FundingVault is ERC20 {
         _mint(msg.sender, tokenAmount);
         //proofOfFundingToken.safeTransfer(msg.sender,tokenAmount);
 
-        amountRaised = amountRaised + msg.value;
+        totalSold = totalSold + msg.value;
 
         emit TokensPurchased(msg.sender, tokenAmount);
     }
@@ -128,16 +139,16 @@ contract FundingVault is ERC20 {
      * @dev Allows users to exchange tokens for Eth (at exchange rate) if and only if the deadline has passed and the minimum number of tokens has not been sold.
      */
 
-    function refundTokens() external {
-        if (block.timestamp < timestamp) revert DeadlineNotPassed();
+    function refundTokens() external nonReentrant {
+        if (block.timestamp <= timestamp) revert DeadlineNotPassed();
 
-        if (amountRaised >= minFundingAmount) revert MinFundingAmountReached();
+        if (minimumReached()) revert MinFundingAmountReached();
 
         uint256 voucherAmount = balanceOf(msg.sender);
         uint256 refundAmount = voucherAmount / exchangeRate;
 
         _burn(msg.sender, voucherAmount);
-        amountRaised = amountRaised - refundAmount;
+        totalRefunded = totalRefunded + refundAmount;
 
         (bool ethTransferSuccess, ) = payable(msg.sender).call{
             value: refundAmount
@@ -150,46 +161,61 @@ contract FundingVault is ERC20 {
 
     /**
      * @dev Allows Project owners to withdraw Eth if and only if the minimum number of tokens has been sold.
-     
+     * A recipient that cannot receive the payout does not block the withdrawal: its share is credited to
+     * pendingWithdrawals instead and can be claimed with claimPending.
      */
 
-    function withdrawFunds() external onlyOwner {
-        if (amountRaised < minFundingAmount)
-            revert MinFundingAmountNotReached();
+    function withdrawFunds() external onlyOwner nonReentrant {
+        if (!minimumReached()) revert MinFundingAmountNotReached();
 
-        uint256 fundsCollected = address(this).balance;
+        uint256 fundsCollected = address(this).balance - totalPending;
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
 
-        (bool successA, ) = payable(developerFeeAddress).call{
-            value: developerFee
-        }("");
-
-        if (!successA) revert EthTransferToDeveloperFailed();
-
-        (bool successB, ) = payable(withdrawalAddress).call{
-            value: amountToWithdraw
-        }("");
-
-        if (!successB) revert EthTransferToWithdrawalFailed();
+        _payOrCredit(developerFeeAddress, developerFee);
+        _payOrCredit(withdrawalAddress, amountToWithdraw);
 
         emit FundsWithdrawn(msg.sender, amountToWithdraw);
     }
 
     /**
-     * @dev Allows Project owners to withdraw unsold tokens from the contract at any time.
+     * @dev Sends the caller's credited payout to the given address. The recipient of a credit may not
+     * be able to receive ETH itself, so it can name a different address.
+     * @param to address that receives the credited amount
+     */
+    function claimPending(address payable to) external nonReentrant {
+        if (to == address(0)) revert ZeroAddressRecipient();
+
+        uint256 amount = pendingWithdrawals[msg.sender];
+        if (amount == 0) revert NothingToClaim();
+
+        pendingWithdrawals[msg.sender] = 0;
+        totalPending = totalPending - amount;
+
+        (bool success, ) = to.call{value: amount}("");
+        if (!success) revert EthTransferFailed();
+
+        emit PendingWithdrawalClaimed(msg.sender, to, amount);
+    }
+
+    /**
+     * @dev Allows Project owners to withdraw unsold tokens from the contract once the deadline has passed.
      * @param UnsoldTokenAmount amount to withdraw
      */
 
     function withdrawUnsoldTokens(
         uint256 UnsoldTokenAmount
     ) external onlyOwner {
+        if (block.timestamp <= timestamp) revert DeadlineNotPassed();
+
         if (
             proofOfFundingToken.balanceOf(address(this)) - totalSupply() <
             UnsoldTokenAmount
         ) revert NotEnoughTokens();
 
         proofOfFundingToken.safeTransfer(withdrawalAddress, UnsoldTokenAmount);
+
+        emit UnsoldTokensWithdrawn(msg.sender, UnsoldTokenAmount);
     }
 
     /**
@@ -202,13 +228,53 @@ contract FundingVault is ERC20 {
             address(this),
             additionalTokens
         );
+
+        emit TokensAdded(msg.sender, additionalTokens);
     }
 
+    /**
+     * @dev Allows contributors to exchange vouchers for proof-of-funding tokens as soon as the minimum funding amount has been reached.
+     */
     function redeem() external {
-        if (block.timestamp < timestamp) revert DeadlineNotPassed();
+        if (!minimumReached()) revert MinFundingAmountNotReached();
         uint256 voucherAmount = balanceOf(msg.sender);
         _burn(msg.sender, voucherAmount);
         proofOfFundingToken.safeTransfer(msg.sender, voucherAmount);
+
+        emit Redeemed(msg.sender, voucherAmount);
+    }
+
+    /**
+     * @dev Pays the amount to the recipient, or credits it to pendingWithdrawals if the transfer fails.
+     * Nothing is sent for a zero amount, so a zero fee never calls the developer address.
+     */
+    function _payOrCredit(address to, uint256 amount) private {
+        if (amount == 0) return;
+
+        (bool success, ) = payable(to).call{value: amount}("");
+        if (!success) {
+            pendingWithdrawals[to] = pendingWithdrawals[to] + amount;
+            totalPending = totalPending + amount;
+            emit WithdrawalCredited(to, amount);
+        }
+    }
+
+    /**
+     * @notice The proof-of-funding tokens the vault currently holds: those reserved for outstanding
+     * vouchers plus the unsold remainder.
+     * @dev Read from the token balance rather than stored, so it cannot go stale after addTokens,
+     * withdrawUnsoldTokens or redeem, and it is correct even when the token charges a transfer fee.
+     */
+    function proofOfFundingTokenAmount() public view returns (uint256) {
+        return proofOfFundingToken.balanceOf(address(this));
+    }
+
+    /**
+     * @notice Whether the net funding (sold minus refunded) has reached the minimum.
+     * @dev Refunds are only possible while this is false, so once it turns true it stays true.
+     */
+    function minimumReached() public view returns (bool) {
+        return totalSold - totalRefunded >= minFundingAmount;
     }
 
     /**
@@ -219,7 +285,7 @@ contract FundingVault is ERC20 {
         Vault memory VaultDetails;
         VaultDetails.withdrawalAddress = withdrawalAddress;
         VaultDetails.proofOfFundingToken = address(proofOfFundingToken);
-        VaultDetails.proofOfFundingTokenAmount = proofOfFundingTokenAmount;
+        VaultDetails.proofOfFundingTokenAmount = proofOfFundingTokenAmount();
         VaultDetails.minFundingAmount = minFundingAmount;
         VaultDetails.timestamp = timestamp;
         VaultDetails.exchangeRate = exchangeRate;

@@ -136,6 +136,136 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
     });
   });
 
+  describe("accounting counters", function () {
+    it("should start with nothing sold, nothing refunded and the minimum not reached", async function () {
+      const { vault } = await loadFixture(deployERC20VaultFixture);
+
+      expect(await vault.totalSold()).to.equal(0n);
+      expect(await vault.totalRefunded()).to.equal(0n);
+      expect(await vault.minimumReached()).to.equal(false);
+    });
+
+    it("should add every purchase to totalSold", async function () {
+      const { vault, fundingToken, alice, bob } = await loadFixture(deployERC20VaultFixture);
+
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await contribute(vault, fundingToken, bob, 2n * ONE_TOKEN);
+
+      expect(await vault.totalSold()).to.equal(3n * ONE_TOKEN);
+    });
+
+    it("should count refunds in totalRefunded and leave totalSold untouched", async function () {
+      const { vault, fundingToken, alice, bob, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await contribute(vault, fundingToken, bob, 3n * ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+
+      await vault.connect(bob).refundTokens();
+
+      expect(await vault.totalSold()).to.equal(4n * ONE_TOKEN);
+      expect(await vault.totalRefunded()).to.equal(3n * ONE_TOKEN);
+    });
+
+    it("should report the minimum reached exactly when sold minus refunded reaches it", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+
+      await contribute(vault, fundingToken, alice, MIN_FUNDING - 1n);
+      expect(await vault.minimumReached()).to.equal(false);
+
+      await contribute(vault, fundingToken, alice, 1n);
+      expect(await vault.minimumReached()).to.equal(true);
+    });
+  });
+
+  describe("proofOfFundingTokenAmount tracks the vault's real PFT holdings", function () {
+    it("should equal the PFT deposited at creation", async function () {
+      const { vault } = await loadFixture(deployERC20VaultFixture);
+
+      expect(await vault.proofOfFundingTokenAmount()).to.equal(PFT_AMOUNT);
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT);
+    });
+
+    it("should be unchanged by purchases, which only reserve PFT for vouchers", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT);
+    });
+
+    it("should grow when the owner adds PFT", async function () {
+      const { vault, pft } = await loadFixture(deployERC20VaultFixture);
+      const extra = ethers.parseEther("100");
+      await pft.approve(await vault.getAddress(), extra);
+
+      await vault.addTokens(extra);
+
+      expect(await vault.proofOfFundingTokenAmount()).to.equal(PFT_AMOUNT + extra);
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT + extra);
+    });
+
+    it("should shrink when the owner withdraws unsold PFT", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+      const unsold = PFT_AMOUNT - ONE_TOKEN * EXCHANGE_RATE;
+
+      await vault.withdrawUnsoldTokens(unsold);
+
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT - unsold);
+    });
+
+    it("should shrink when vouchers are redeemed", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+
+      await vault.connect(alice).redeem();
+
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(PFT_AMOUNT - MIN_FUNDING * EXCHANGE_RATE);
+    });
+
+    it("should always equal the PFT balance the vault really holds", async function () {
+      const { vault, pft, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      await vault.connect(alice).redeem();
+
+      expect(await vault.proofOfFundingTokenAmount()).to.equal(await pft.balanceOf(await vault.getAddress()));
+    });
+  });
+
+  describe("events for redeem, addTokens and withdrawUnsoldTokens", function () {
+    it("should emit Redeemed with the user and the PFT redeemed", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+
+      const tx = await vault.connect(alice).redeem();
+
+      await expect(tx)
+        .to.emit(vault, "Redeemed")
+        .withArgs(alice.address, MIN_FUNDING * EXCHANGE_RATE);
+    });
+
+    it("should emit TokensAdded with the owner and the amount added", async function () {
+      const { vault, pft, owner } = await loadFixture(deployERC20VaultFixture);
+      const extra = ethers.parseEther("100");
+      await pft.approve(await vault.getAddress(), extra);
+
+      const tx = await vault.addTokens(extra);
+
+      await expect(tx).to.emit(vault, "TokensAdded").withArgs(owner.address, extra);
+    });
+
+    it("should emit UnsoldTokensWithdrawn with the owner and the amount withdrawn", async function () {
+      const { vault, fundingToken, owner, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+      const unsold = PFT_AMOUNT - ONE_TOKEN * EXCHANGE_RATE;
+
+      const tx = await vault.withdrawUnsoldTokens(unsold);
+
+      await expect(tx).to.emit(vault, "UnsoldTokensWithdrawn").withArgs(owner.address, unsold);
+    });
+  });
+
   describe("refundTokens", function () {
     it("should refund the contribution when the campaign failed", async function () {
       const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
@@ -164,6 +294,22 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await contribute(vault, fundingToken, alice, ONE_TOKEN);
 
       await expect(vault.connect(alice).refundTokens()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should fail when refunding exactly at the deadline", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.setNextBlockTimestamp(deadline);
+
+      await expect(vault.connect(alice).refundTokens()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should allow refunding one second after the deadline", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.setNextBlockTimestamp(deadline + 1);
+
+      await expect(vault.connect(alice).refundTokens()).to.emit(vault, "Refund");
     });
 
     it("should fail when the minimum funding amount was reached", async function () {
@@ -216,6 +362,30 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await expect(vault.connect(alice).withdrawFunds()).to.be.revertedWithCustomError(vault, "OwnerOnly");
     });
 
+    it("should be callable again after more contributions arrive following a full withdrawal", async function () {
+      const { vault, fundingToken, owner, developer, alice, bob } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      await vault.withdrawFunds();
+      expect(await fundingToken.balanceOf(await vault.getAddress())).to.equal(0n);
+
+      await contribute(vault, fundingToken, bob, 2n * ONE_TOKEN);
+      const fee = (2n * ONE_TOKEN * DEVELOPER_FEE_PERCENTAGE) / 100n;
+
+      await expect(vault.withdrawFunds()).to.changeTokenBalances(
+        fundingToken,
+        [owner, developer, vault],
+        [2n * ONE_TOKEN - fee, fee, -2n * ONE_TOKEN],
+      );
+    });
+
+    it("should pay nothing and not fail when called again with no new funds", async function () {
+      const { vault, fundingToken, owner, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      await vault.withdrawFunds();
+
+      await expect(vault.withdrawFunds()).to.changeTokenBalance(fundingToken, owner, 0n);
+    });
+
     it("should allow withdrawal before the deadline once the minimum is reached (current behavior)", async function () {
       const { vault, fundingToken, owner, alice } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
@@ -238,22 +408,35 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       expect(await vault.totalSupply()).to.equal(0n);
     });
 
-    it("should fail when the deadline has not passed", async function () {
-      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+    it("should let contributors redeem as soon as the minimum is reached, before the deadline", async function () {
+      const { vault, fundingToken, pft, alice } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
 
-      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+      await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, MIN_FUNDING * EXCHANGE_RATE);
     });
 
-    it("should let a contributor redeem PFT even though the campaign failed (known issue)", async function () {
-      const { vault, fundingToken, pft, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+    it("should fail when the minimum funding amount was not reached, before the deadline", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING - 1n);
+
+      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+    });
+
+    it("should fail when the minimum funding amount was not reached, even after the deadline", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, ONE_TOKEN);
       await time.increaseTo(deadline + 1);
 
-      await expect(vault.connect(alice).redeem()).to.changeTokenBalance(pft, alice, ONE_TOKEN * EXCHANGE_RATE);
+      await expect(vault.connect(alice).redeem()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+    });
 
-      await expect(vault.connect(alice).refundTokens()).to.changeTokenBalance(fundingToken, alice, 0n);
-      expect(await fundingToken.balanceOf(await vault.getAddress())).to.equal(ONE_TOKEN);
+    it("should keep the refund available to a contributor who could not redeem a failed campaign", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
+      await expect(vault.connect(alice).redeem()).to.be.reverted;
+
+      await expect(vault.connect(alice).refundTokens()).to.changeTokenBalance(fundingToken, alice, ONE_TOKEN);
     });
   });
 
@@ -275,16 +458,39 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
     });
 
     it("should let the owner withdraw the unsold PFT", async function () {
-      const { vault, fundingToken, pft, owner, alice } = await loadFixture(deployERC20VaultFixture);
+      const { vault, fundingToken, pft, owner, alice, deadline } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
       const unsold = PFT_AMOUNT - ONE_TOKEN * EXCHANGE_RATE;
 
       await expect(vault.withdrawUnsoldTokens(unsold)).to.changeTokenBalances(pft, [vault, owner], [-unsold, unsold]);
     });
 
-    it("should fail when asking for more than the unsold PFT", async function () {
+    it("should fail when withdrawing unsold PFT before the deadline", async function () {
       const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, ONE_TOKEN);
+
+      await expect(vault.withdrawUnsoldTokens(1n)).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should fail when withdrawing unsold PFT exactly at the deadline", async function () {
+      const { vault, deadline } = await loadFixture(deployERC20VaultFixture);
+      await time.setNextBlockTimestamp(deadline);
+
+      await expect(vault.withdrawUnsoldTokens(1n)).to.be.revertedWithCustomError(vault, "DeadlineNotPassed");
+    });
+
+    it("should allow withdrawing unsold PFT one second after the deadline", async function () {
+      const { vault, pft, owner, deadline } = await loadFixture(deployERC20VaultFixture);
+      await time.setNextBlockTimestamp(deadline + 1);
+
+      await expect(vault.withdrawUnsoldTokens(1n)).to.changeTokenBalance(pft, owner, 1n);
+    });
+
+    it("should fail when asking for more than the unsold PFT", async function () {
+      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, ONE_TOKEN);
+      await time.increaseTo(deadline + 1);
       const unsold = PFT_AMOUNT - ONE_TOKEN * EXCHANGE_RATE;
 
       await expect(vault.withdrawUnsoldTokens(unsold + 1n)).to.be.revertedWithCustomError(vault, "NotEnoughTokens");
@@ -333,29 +539,67 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
   });
 
   describe("with a fee-on-transfer funding token", function () {
-    it("should credit the full amount even though the vault receives less (known issue)", async function () {
+    it("should credit only the amount the vault actually received", async function () {
       const { vault, feeToken, alice } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
       const amount = ethers.parseEther("100");
+      const received = (amount * 99n) / 100n;
       await feeToken.connect(alice).approve(await vault.getAddress(), amount);
 
       await vault.connect(alice).purchaseTokens(amount);
 
-      expect(await feeToken.balanceOf(await vault.getAddress())).to.equal((amount * 99n) / 100n);
-      expect(await vault.balanceOf(alice.address)).to.equal(amount * EXCHANGE_RATE);
+      expect(await feeToken.balanceOf(await vault.getAddress())).to.equal(received);
+      expect(await vault.balanceOf(alice.address)).to.equal(received * EXCHANGE_RATE);
+      expect(await vault.totalSold()).to.equal(received);
+    });
+
+    it("should emit TokensPurchased with the vouchers minted for the received amount", async function () {
+      const { vault, feeToken, alice } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
+      const amount = ethers.parseEther("100");
+      const received = (amount * 99n) / 100n;
+      await feeToken.connect(alice).approve(await vault.getAddress(), amount);
+
+      await expect(vault.connect(alice).purchaseTokens(amount))
+        .to.emit(vault, "TokensPurchased")
+        .withArgs(alice.address, received * EXCHANGE_RATE);
+    });
+
+    it("should be able to refund every contributor of a failed campaign in full", async function () {
+      const { vault, feeToken, alice, bob, deadline } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
+      const amount = 4n * ONE_TOKEN;
+      for (const buyer of [alice, bob]) {
+        await feeToken.connect(buyer).approve(await vault.getAddress(), amount);
+        await vault.connect(buyer).purchaseTokens(amount);
+      }
+      await time.increaseTo(deadline + 1);
+
+      await vault.connect(alice).refundTokens();
+      await expect(vault.connect(bob).refundTokens()).to.not.be.reverted;
+
+      expect(await feeToken.balanceOf(await vault.getAddress())).to.equal(0n);
+      expect(await vault.totalSupply()).to.equal(0n);
+    });
+
+    it("should not reach the minimum on funding the vault never received", async function () {
+      const { vault, feeToken, alice } = await loadFixture(deployFeeOnTransferFundingVaultFixture);
+      const amount = MIN_FUNDING; // nominally enough, but 1% is lost in transfer
+      await feeToken.connect(alice).approve(await vault.getAddress(), amount);
+
+      await vault.connect(alice).purchaseTokens(amount);
+
+      expect(await vault.minimumReached()).to.equal(false);
     });
   });
 
   describe("with an ERC777-style funding token", function () {
-    it("should let a hook re-enter purchaseTokens and mint more vouchers than the vault holds PFT (known issue)", async function () {
+    it("should block a hook from re-entering purchaseTokens so vouchers never exceed the PFT held", async function () {
       const { vault, pft, attacker } = await loadFixture(deployHookFundingVaultFixture);
       const amount = ethers.parseEther("60");
 
-      // 60 funding units at rate 10 need 600 PFT; the vault holds 1000, and each call passes the check alone.
-      await attacker.attack(amount, 1);
+      // 60 funding units at rate 10 need 600 PFT; the vault holds 1000, so each call passes the capacity check alone.
+      await expect(attacker.attack(amount, 1)).to.be.revertedWithCustomError(vault, "ReentrancyGuardReentrantCall");
 
-      const vouchers = await vault.balanceOf(await attacker.getAddress());
-      expect(vouchers).to.equal(2n * amount * EXCHANGE_RATE);
-      expect(vouchers).to.be.gt(await pft.balanceOf(await vault.getAddress()));
+      expect(await vault.totalSupply()).to.equal(0n);
+      expect(await pft.balanceOf(await vault.getAddress())).to.equal(PFT_AMOUNT);
     });
 
     it("should mint normally when the hook does not re-enter", async function () {
