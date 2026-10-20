@@ -89,11 +89,7 @@ contract FundingVault is ERC20, ReentrancyGuard {
     event TokensAdded(address indexed owner, uint256 amount);
     event UnsoldTokensWithdrawn(address indexed owner, uint256 amount);
     event WithdrawalCredited(address indexed recipient, uint256 amount);
-    event PendingWithdrawalClaimed(
-        address indexed account,
-        address indexed to,
-        uint256 amount
-    );
+    event PendingWithdrawalClaimed(address indexed account, address indexed to, uint256 amount);
 
     // Modifiers //
 
