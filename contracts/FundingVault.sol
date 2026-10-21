@@ -25,18 +25,18 @@
  * getters
  */
 pragma solidity ^0.8.28;
-
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {VaultTypes} from "./VaultTypes.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import { VaultTypes } from "./VaultTypes.sol";
 
 /**
  * @title FundingVault
  * @author Muhammad Zain Nasir
  * @notice A contract that allows users to deposit funds and receive proof-of-funding token in return box creator can call WithdrawFunds if there enough funds collected
  */
-contract FundingVault is ERC20 {
+contract FundingVault is Initializable, ERC20Upgradeable {
     // Errors //
     error MinFundingAmountReached();
     error MinFundingAmountNotReached();
@@ -49,10 +49,10 @@ contract FundingVault is ERC20 {
 
     // State Variables //
     using SafeERC20 for IERC20;
-    IERC20 public immutable proofOfFundingToken; // The token that will be used as proof-of-funding token to incentivise contributions
+    IERC20 public  proofOfFundingToken; // The token that will be used as proof-of-funding token to incentivise contributions
     uint256 public proofOfFundingTokenAmount; // The initial  proof-of-funding token amount which will be in fundingVault
     uint256 public timestamp; // The date limit until which withdrawal or after which refund is allowed.
-    uint256 public immutable minFundingAmount; // The minimum amount of ETH required in the contract to enable withdrawal.
+    uint256 public minFundingAmount; // The minimum amount of ETH required in the contract to enable withdrawal.
     uint256 public exchangeRate; // The exchange rate of ETH per token
     address public withdrawalAddress; // WithdrawalAddress is also considered as owner of the Vault.
     address private developerFeeAddress; // Developer address
@@ -92,7 +92,13 @@ contract FundingVault is ERC20 {
 
     // Functions //
 
-    constructor(VaultTypes.VaultConfig memory config) ERC20("Voucher", "VCHR") {
+     /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor(){
+        _disableInitializers();
+    }
+
+    function initialize(VaultTypes.VaultConfig calldata config) external initializer  {
+        __ERC20_init("Voucher", "VCHR");
         proofOfFundingToken = IERC20(config.proofOfFundingToken);
         proofOfFundingTokenAmount = config.proofOfFundingTokenAmount;
         minFundingAmount = config.minFundingAmount;
