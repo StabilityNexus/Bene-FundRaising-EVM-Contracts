@@ -44,7 +44,6 @@ contract FundingVault is ERC20, ReentrancyGuard {
     error DeadlineNotPassed();
     error NotEnoughTokens();
     error EthTransferFailed();
-    error NothingToClaim();
     error ZeroAddressRecipient();
     error OwnerOnly();
 
@@ -62,8 +61,6 @@ contract FundingVault is ERC20, ReentrancyGuard {
     string public projectDescription; // Short description of the project
     uint256 public totalSold; // Total funding ever received. Only ever increases.
     uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
-    mapping(address => uint256) public pendingWithdrawals; // Payouts that could not be sent and wait to be claimed.
-    uint256 private totalPending; // Sum of pendingWithdrawals, excluded from the next withdrawal.
 
     /**
      * @dev A vault is represented as a struct
@@ -88,8 +85,6 @@ contract FundingVault is ERC20, ReentrancyGuard {
     event Redeemed(address indexed user, uint256 amount);
     event TokensAdded(address indexed owner, uint256 amount);
     event UnsoldTokensWithdrawn(address indexed owner, uint256 amount);
-    event WithdrawalCredited(address indexed recipient, uint256 amount);
-    event PendingWithdrawalClaimed(address indexed account, address indexed to, uint256 amount);
 
     // Modifiers //
 
@@ -157,41 +152,28 @@ contract FundingVault is ERC20, ReentrancyGuard {
 
     /**
      * @dev Allows Project owners to withdraw Eth if and only if the minimum number of tokens has been sold.
-     * A recipient that cannot receive the payout does not block the withdrawal: its share is credited to
-     * pendingWithdrawals instead and can be claimed with claimPending.
+     * The developer fee goes to the developer address and the rest to `to`, so the owner can send their
+     * share to an address other than the withdrawal address. The call reverts if either transfer fails.
+     * @param to address that receives the owner's share
      */
 
-    function withdrawFunds() external onlyOwner nonReentrant {
+    function withdrawFunds(address to) external onlyOwner nonReentrant {
         if (!minimumReached()) revert MinFundingAmountNotReached();
+        if (to == address(0)) revert ZeroAddressRecipient();
 
-        uint256 fundsCollected = address(this).balance - totalPending;
+        uint256 fundsCollected = address(this).balance;
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
 
-        _payOrCredit(developerFeeAddress, developerFee);
-        _payOrCredit(withdrawalAddress, amountToWithdraw);
+        (bool successDeveloper, ) = payable(developerFeeAddress).call{
+            value: developerFee
+        }("");
+        if (!successDeveloper) revert EthTransferFailed();
+
+        (bool successOwner, ) = payable(to).call{value: amountToWithdraw}("");
+        if (!successOwner) revert EthTransferFailed();
 
         emit FundsWithdrawn(msg.sender, amountToWithdraw);
-    }
-
-    /**
-     * @dev Sends the caller's credited payout to the given address. The recipient of a credit may not
-     * be able to receive ETH itself, so it can name a different address.
-     * @param to address that receives the credited amount
-     */
-    function claimPending(address payable to) external nonReentrant {
-        if (to == address(0)) revert ZeroAddressRecipient();
-
-        uint256 amount = pendingWithdrawals[msg.sender];
-        if (amount == 0) revert NothingToClaim();
-
-        pendingWithdrawals[msg.sender] = 0;
-        totalPending = totalPending - amount;
-
-        (bool success, ) = to.call{value: amount}("");
-        if (!success) revert EthTransferFailed();
-
-        emit PendingWithdrawalClaimed(msg.sender, to, amount);
     }
 
     /**
@@ -238,21 +220,6 @@ contract FundingVault is ERC20, ReentrancyGuard {
         proofOfFundingToken.safeTransfer(msg.sender, voucherAmount);
 
         emit Redeemed(msg.sender, voucherAmount);
-    }
-
-    /**
-     * @dev Pays the amount to the recipient, or credits it to pendingWithdrawals if the transfer fails.
-     * Nothing is sent for a zero amount, so a zero fee never calls the developer address.
-     */
-    function _payOrCredit(address to, uint256 amount) private {
-        if (amount == 0) return;
-
-        (bool success, ) = payable(to).call{value: amount}("");
-        if (!success) {
-            pendingWithdrawals[to] = pendingWithdrawals[to] + amount;
-            totalPending = totalPending + amount;
-            emit WithdrawalCredited(to, amount);
-        }
     }
 
     /**

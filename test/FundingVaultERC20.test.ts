@@ -328,7 +328,7 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await time.increaseTo(deadline + 1);
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeTokenBalances(
+      await expect(vault.withdrawFunds(owner.address)).to.changeTokenBalances(
         fundingToken,
         [owner, developer, vault],
         [MIN_FUNDING - fee, fee, -MIN_FUNDING],
@@ -341,37 +341,75 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await time.increaseTo(deadline + 1);
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds())
+      await expect(vault.withdrawFunds(owner.address))
         .to.emit(vault, "FundsWithdrawn")
         .withArgs(owner.address, MIN_FUNDING - fee);
     });
 
     it("should fail when the minimum funding amount was not reached", async function () {
-      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      const { vault, fundingToken, owner, alice, deadline } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING - 1n);
       await time.increaseTo(deadline + 1);
 
-      await expect(vault.withdrawFunds()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+      await expect(vault.withdrawFunds(owner.address)).to.be.revertedWithCustomError(
+        vault,
+        "MinFundingAmountNotReached",
+      );
     });
 
     it("should fail when a non-owner tries to withdraw funds", async function () {
-      const { vault, fundingToken, alice, deadline } = await loadFixture(deployERC20VaultFixture);
+      const { vault, fundingToken, owner, alice, deadline } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
       await time.increaseTo(deadline + 1);
 
-      await expect(vault.connect(alice).withdrawFunds()).to.be.revertedWithCustomError(vault, "OwnerOnly");
+      await expect(vault.connect(alice).withdrawFunds(owner.address)).to.be.revertedWithCustomError(vault, "OwnerOnly");
+    });
+
+    it("should send the owner's share to the given address instead of the withdrawal address", async function () {
+      const { vault, fundingToken, owner, developer, alice, stranger, deadline } = await loadFixture(
+        deployERC20VaultFixture,
+      );
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      await time.increaseTo(deadline + 1);
+      const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
+
+      await expect(vault.withdrawFunds(stranger.address)).to.changeTokenBalances(
+        fundingToken,
+        [stranger, developer, owner, vault],
+        [MIN_FUNDING - fee, fee, 0n, -MIN_FUNDING],
+      );
+    });
+
+    it("should still emit FundsWithdrawn with the caller and the owner's share when redirected", async function () {
+      const { vault, fundingToken, owner, alice, stranger } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+      const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
+
+      await expect(vault.withdrawFunds(stranger.address))
+        .to.emit(vault, "FundsWithdrawn")
+        .withArgs(owner.address, MIN_FUNDING - fee);
+    });
+
+    it("should fail when the recipient is the zero address", async function () {
+      const { vault, fundingToken, alice } = await loadFixture(deployERC20VaultFixture);
+      await contribute(vault, fundingToken, alice, MIN_FUNDING);
+
+      await expect(vault.withdrawFunds(ethers.ZeroAddress)).to.be.revertedWithCustomError(
+        vault,
+        "ZeroAddressRecipient",
+      );
     });
 
     it("should be callable again after more contributions arrive following a full withdrawal", async function () {
       const { vault, fundingToken, owner, developer, alice, bob } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
-      await vault.withdrawFunds();
+      await vault.withdrawFunds(owner.address);
       expect(await fundingToken.balanceOf(await vault.getAddress())).to.equal(0n);
 
       await contribute(vault, fundingToken, bob, 2n * ONE_TOKEN);
       const fee = (2n * ONE_TOKEN * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeTokenBalances(
+      await expect(vault.withdrawFunds(owner.address)).to.changeTokenBalances(
         fundingToken,
         [owner, developer, vault],
         [2n * ONE_TOKEN - fee, fee, -2n * ONE_TOKEN],
@@ -381,9 +419,9 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
     it("should pay nothing and not fail when called again with no new funds", async function () {
       const { vault, fundingToken, owner, alice } = await loadFixture(deployERC20VaultFixture);
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
-      await vault.withdrawFunds();
+      await vault.withdrawFunds(owner.address);
 
-      await expect(vault.withdrawFunds()).to.changeTokenBalance(fundingToken, owner, 0n);
+      await expect(vault.withdrawFunds(owner.address)).to.changeTokenBalance(fundingToken, owner, 0n);
     });
 
     it("should allow withdrawal before the deadline once the minimum is reached (current behavior)", async function () {
@@ -391,7 +429,7 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await contribute(vault, fundingToken, alice, MIN_FUNDING);
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeTokenBalance(fundingToken, owner, MIN_FUNDING - fee);
+      await expect(vault.withdrawFunds(owner.address)).to.changeTokenBalance(fundingToken, owner, MIN_FUNDING - fee);
     });
   });
 
@@ -528,7 +566,11 @@ describe("FundingVaultERC20 (ERC20 funding)", function () {
       await time.increaseTo(deadline + 1);
       const fee = (10n * USDC * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeTokenBalances(usdc, [owner, developer], [10n * USDC - fee, fee]);
+      await expect(vault.withdrawFunds(owner.address)).to.changeTokenBalances(
+        usdc,
+        [owner, developer],
+        [10n * USDC - fee, fee],
+      );
     });
 
     it("should keep 18 decimals on the voucher regardless of the funding token (current behavior)", async function () {

@@ -27,21 +27,13 @@ contract ReentrantFeeReceiver {
         reentrantCall = reentrantCall_;
 
         (bool success, bytes memory result) = vault_.call(
-            abi.encodeWithSignature("withdrawFunds()")
+            abi.encodeWithSignature("withdrawFunds(address)", address(this))
         );
         if (!success) {
             assembly {
                 revert(add(result, 32), mload(result))
             }
         }
-    }
-
-    /**
-     * @notice Lets a test make an arbitrary call to the vault as this contract
-     * (e.g. claimPending). Returns instead of reverting so tests can inspect it.
-     */
-    function callVault(bytes calldata data) external returns (bool success, bytes memory result) {
-        return vault.call(data);
     }
 
     receive() external payable {

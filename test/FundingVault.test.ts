@@ -336,7 +336,7 @@ describe("FundingVault (native ETH funding)", function () {
       await time.increaseTo(deadline + 1);
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeEtherBalances(
+      await expect(vault.withdrawFunds(owner.address)).to.changeEtherBalances(
         [owner, developer, vault],
         [MIN_FUNDING - fee, fee, -MIN_FUNDING],
       );
@@ -348,7 +348,7 @@ describe("FundingVault (native ETH funding)", function () {
       await time.increaseTo(deadline + 1);
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds())
+      await expect(vault.withdrawFunds(owner.address))
         .to.emit(vault, "FundsWithdrawn")
         .withArgs(owner.address, MIN_FUNDING - fee);
     });
@@ -360,35 +360,73 @@ describe("FundingVault (native ETH funding)", function () {
       await time.increaseTo(deadline + 1);
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeEtherBalances([owner, developer], [MIN_FUNDING - fee, fee]);
+      await expect(vault.withdrawFunds(owner.address)).to.changeEtherBalances(
+        [owner, developer],
+        [MIN_FUNDING - fee, fee],
+      );
     });
 
     it("should fail when the minimum funding amount was not reached", async function () {
-      const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
+      const { vault, owner, alice, deadline } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING - 1n });
       await time.increaseTo(deadline + 1);
 
-      await expect(vault.withdrawFunds()).to.be.revertedWithCustomError(vault, "MinFundingAmountNotReached");
+      await expect(vault.withdrawFunds(owner.address)).to.be.revertedWithCustomError(
+        vault,
+        "MinFundingAmountNotReached",
+      );
     });
 
     it("should fail when a non-owner tries to withdraw funds", async function () {
-      const { vault, alice, deadline } = await loadFixture(deployNativeVaultFixture);
+      const { vault, owner, alice, deadline } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
       await time.increaseTo(deadline + 1);
 
-      await expect(vault.connect(alice).withdrawFunds()).to.be.revertedWithCustomError(vault, "OwnerOnly");
+      await expect(vault.connect(alice).withdrawFunds(owner.address)).to.be.revertedWithCustomError(vault, "OwnerOnly");
+    });
+
+    it("should send the owner's share to the given address instead of the withdrawal address", async function () {
+      const { vault, owner, developer, alice, stranger, deadline } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
+      await time.increaseTo(deadline + 1);
+      const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
+
+      await expect(vault.withdrawFunds(stranger.address)).to.changeEtherBalances(
+        [stranger, developer, owner, vault],
+        [MIN_FUNDING - fee, fee, 0n, -MIN_FUNDING],
+      );
+    });
+
+    it("should still emit FundsWithdrawn with the caller and the owner's share when redirected", async function () {
+      const { vault, owner, alice, stranger } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
+      const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
+
+      await expect(vault.withdrawFunds(stranger.address))
+        .to.emit(vault, "FundsWithdrawn")
+        .withArgs(owner.address, MIN_FUNDING - fee);
+    });
+
+    it("should fail when the recipient is the zero address", async function () {
+      const { vault, alice } = await loadFixture(deployNativeVaultFixture);
+      await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
+
+      await expect(vault.withdrawFunds(ethers.ZeroAddress)).to.be.revertedWithCustomError(
+        vault,
+        "ZeroAddressRecipient",
+      );
     });
 
     it("should be callable again after more contributions arrive following a full withdrawal", async function () {
       const { vault, owner, developer, alice, bob } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
-      await vault.withdrawFunds();
+      await vault.withdrawFunds(owner.address);
       expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
 
       await vault.connect(bob).purchaseTokens({ value: 2n * ONE_ETH });
       const fee = (2n * ONE_ETH * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeEtherBalances(
+      await expect(vault.withdrawFunds(owner.address)).to.changeEtherBalances(
         [owner, developer, vault],
         [2n * ONE_ETH - fee, fee, -2n * ONE_ETH],
       );
@@ -397,9 +435,9 @@ describe("FundingVault (native ETH funding)", function () {
     it("should pay nothing and not fail when called again with no new funds", async function () {
       const { vault, owner, alice } = await loadFixture(deployNativeVaultFixture);
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
-      await vault.withdrawFunds();
+      await vault.withdrawFunds(owner.address);
 
-      await expect(vault.withdrawFunds()).to.changeEtherBalance(owner, 0n);
+      await expect(vault.withdrawFunds(owner.address)).to.changeEtherBalance(owner, 0n);
     });
 
     it("should allow withdrawal before the deadline once the minimum is reached (current behavior)", async function () {
@@ -407,7 +445,7 @@ describe("FundingVault (native ETH funding)", function () {
       await vault.connect(alice).purchaseTokens({ value: MIN_FUNDING });
       const fee = (MIN_FUNDING * DEVELOPER_FEE_PERCENTAGE) / 100n;
 
-      await expect(vault.withdrawFunds()).to.changeEtherBalance(owner, MIN_FUNDING - fee);
+      await expect(vault.withdrawFunds(owner.address)).to.changeEtherBalance(owner, MIN_FUNDING - fee);
     });
   });
 
@@ -425,7 +463,7 @@ describe("FundingVault (native ETH funding)", function () {
 
     it("should block a developer fee address from re-entering withdrawFunds", async function () {
       const { vault, attacker } = await reentrantWithdrawalSetup();
-      const reenter = vault.interface.encodeFunctionData("withdrawFunds");
+      const reenter = vault.interface.encodeFunctionData("withdrawFunds", [await attacker.getAddress()]);
 
       await attacker.attack(await vault.getAddress(), reenter);
 
@@ -434,34 +472,13 @@ describe("FundingVault (native ETH funding)", function () {
       expect(await attacker.reentryRevertData()).to.equal(GUARD_SELECTOR);
     });
 
-    it("should pay out exactly once and leave no phantom credit after a blocked re-entry", async function () {
+    it("should pay out exactly once after a blocked re-entry", async function () {
       const { vault, attacker } = await reentrantWithdrawalSetup();
-      const reenter = vault.interface.encodeFunctionData("withdrawFunds");
+      const reenter = vault.interface.encodeFunctionData("withdrawFunds", [await attacker.getAddress()]);
 
       await expect(attacker.attack(await vault.getAddress(), reenter)).to.changeEtherBalance(attacker, MIN_FUNDING);
 
       expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
-      expect(await vault.pendingWithdrawals(await attacker.getAddress())).to.equal(0n);
-    });
-
-    it("should not leave a credit that could later be claimed out of other depositors' funds", async function () {
-      const { vault, attacker, bob } = await reentrantWithdrawalSetup();
-      await attacker.attack(await vault.getAddress(), vault.interface.encodeFunctionData("withdrawFunds"));
-      await vault.connect(bob).purchaseTokens({ value: MIN_FUNDING });
-
-      await attacker.callVault(vault.interface.encodeFunctionData("claimPending", [await attacker.getAddress()]));
-
-      expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(MIN_FUNDING);
-    });
-
-    it("should block re-entering claimPending while withdrawFunds is in flight", async function () {
-      const { vault, attacker } = await reentrantWithdrawalSetup();
-      const reenter = vault.interface.encodeFunctionData("claimPending", [await attacker.getAddress()]);
-
-      await attacker.attack(await vault.getAddress(), reenter);
-
-      expect(await attacker.reentrySucceeded()).to.equal(false);
-      expect(await attacker.reentryRevertData()).to.equal(GUARD_SELECTOR);
     });
 
     it("should block re-entering refundTokens while withdrawFunds is in flight", async function () {
