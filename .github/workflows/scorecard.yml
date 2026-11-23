@@ -1,0 +1,73 @@
+# OpenSSF Scorecard: scores this repository's supply-chain security practices, publishes the
+# result to the public Scorecard API (which powers the README badge) and uploads it to GitHub's
+# code scanning dashboard.
+#
+# Based on the example in https://github.com/ossf/scorecard-action/blob/main/examples/scorecard.yml
+#
+# Scorecard only publishes from a workflow that follows its restrictions
+# (https://github.com/ossf/scorecard-action#workflow-restrictions), so keep this file as it is:
+#   - no top-level env or defaults, and no write permissions at the workflow level
+#   - no env, defaults, containers or services in the analysis job, and no `run` steps in it
+#   - only the analysis job may have `id-token: write`
+#   - the analysis job may only use actions/checkout, actions/upload-artifact,
+#     github/codeql-action/upload-sarif, ossf/scorecard-action and step-security/harden-runner
+name: Scorecard supply-chain security
+
+on:
+  # Re-run when the branch protection settings change (feeds the Branch-Protection check).
+  branch_protection_rule:
+  # Weekly, on Saturdays. Keeps the Maintained check up to date.
+  schedule:
+    - cron: '37 6 * * 6'
+  # Scorecard only supports the default branch.
+  push:
+    branches: ['main']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Nothing by default; the job below asks for exactly what it needs.
+permissions: {}
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    # Running on a fork is not supported, and only the default branch is analysed.
+    if: ${{ !github.event.repository.fork && github.event.repository.default_branch == github.ref_name }}
+    permissions:
+      contents: read # Read the repository (actions/checkout).
+      security-events: write # Upload the SARIF results to code scanning.
+      id-token: write # Sign the results published to api.scorecard.dev (OIDC).
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # This is a public repository. Publishing replaces Scorecard's own weekly scan of it with
+          # this run, and is required for the badge (https://api.scorecard.dev/projects/...).
+          publish_results: true
+
+      # Keep the SARIF file as a workflow artifact for five days, to help debugging.
+      - name: Upload artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      # Show the results in the repository's Security tab, under code scanning alerts.
+      - name: Upload to code scanning
+        if: ${{ always() }}
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: results.sarif
