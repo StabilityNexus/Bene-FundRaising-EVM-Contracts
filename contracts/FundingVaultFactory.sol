@@ -43,6 +43,7 @@ contract FundingVaultFactory {
     error InvalidIndex();
     error ExchangeRateCanNotBeZero();
     error InvalidFeePercentage();
+    error FundingTokenSameAsProofOfFundingToken();
 
     //Type declarations
     struct Vault {
@@ -85,6 +86,9 @@ contract FundingVaultFactory {
 
         if (block.timestamp > config.timestamp)
             revert deadlineCannotBeInThePast();
+
+        if (config.fundingToken == config.proofOfFundingToken)
+            revert FundingTokenSameAsProofOfFundingToken();
 
         if (config.minFundingAmount == 0) revert MinFundingAmountCanNotBeZero();
 

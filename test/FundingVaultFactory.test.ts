@@ -125,6 +125,16 @@ describe("FundingVaultFactory", function () {
       await expect(factory.deployFundingVault(config)).to.be.revertedWithCustomError(factory, "CannotBeAZeroAddress");
     });
 
+    it("should fail when the funding token is the same as the proof-of-funding token", async function () {
+      const { factory, pft, base } = await validBase();
+      const config = await buildConfig(base, { fundingToken: await pft.getAddress() });
+
+      await expect(factory.deployFundingVault(config)).to.be.revertedWithCustomError(
+        factory,
+        "FundingTokenSameAsProofOfFundingToken",
+      );
+    });
+
     it("should fail when the deadline is in the past", async function () {
       const { factory, base } = await validBase();
       const config = await buildConfig(base, { timestamp: (await time.latest()) - 1 });
@@ -193,7 +203,7 @@ describe("FundingVaultFactory", function () {
       expect(await factory.getTotalNumberOfFundingVaults()).to.equal(0n);
     });
 
-    it("should record the configured PFT amount even when the PFT charges a transfer fee (known issue)", async function () {
+    it("should record the PFT the vault actually received when the PFT charges a transfer fee", async function () {
       const { factory, owner, developer } = await validBase();
       const feePft = await (await ethers.getContractFactory("MockFeeOnTransferERC20")).deploy("Fee PFT", "FPFT", 100);
       await feePft.mint(owner.address, PFT_AMOUNT);
@@ -206,8 +216,10 @@ describe("FundingVaultFactory", function () {
       const vaultAddress = await deployVaultViaFactory(factory, owner, feePft, config);
 
       const vault = await ethers.getContractAt("FundingVault", vaultAddress);
-      expect(await vault.proofOfFundingTokenAmount()).to.equal(PFT_AMOUNT);
-      expect(await feePft.balanceOf(vaultAddress)).to.equal((PFT_AMOUNT * 99n) / 100n);
+      const received = (PFT_AMOUNT * 99n) / 100n;
+      expect(await feePft.balanceOf(vaultAddress)).to.equal(received);
+      expect(await vault.proofOfFundingTokenAmount()).to.equal(received);
+      expect((await vault.getVault()).proofOfFundingTokenAmount).to.equal(received);
     });
   });
 

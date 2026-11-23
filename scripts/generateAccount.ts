@@ -2,7 +2,8 @@ import { ethers } from "ethers";
 import { parse, stringify } from "envfile";
 import * as fs from "fs";
 
-const envFilePath = "./.env";
+// Overridable so tests can generate a key without touching the real .env.
+const envFilePath = process.env.ENV_FILE_PATH ?? "./.env";
 
 /**
  * Generate a new random private key and write it to the .env file
