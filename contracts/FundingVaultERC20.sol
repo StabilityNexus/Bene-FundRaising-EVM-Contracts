@@ -47,6 +47,7 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     //error EthTransferToDeveloperFailed();
     //error EthTransferToWithdrawalFailed();
     error ZeroAddressRecipient();
+    error NoPendingDeveloperFee();
     error OwnerOnly();
 
     // State Variables //
@@ -64,6 +65,13 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     string public projectDescription; // Short description of the project
     uint256 public totalSold; // Total funding ever received. Only ever increases.
     uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
+    mapping(address => uint256) private pendingDeveloperFee; // Developer fee that could not be sent, owed to the address that failed to receive it.
+    uint256 private totalPendingDeveloperFee; // Sum of pendingDeveloperFee. Still held by the vault, so excluded from the next withdrawal.
+    /// @dev Gas given to the developer-fee transfer in withdrawFunds. Plenty for a normal transfer to a
+    /// contract wallet. A token's recipient hook cannot burn more than this, so it cannot run the withdrawal
+    /// out of gas. A fee that needs more stays parked, and retryDeveloperFee forwards all gas. The owner's own
+    /// share is not capped.
+    uint256 private constant DEVELOPER_FEE_TRANSFER_GAS = 200_000;
 
     /**
      * @dev A vault is represented as a struct
@@ -89,6 +97,8 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     event Redeemed(address indexed user, uint256 amount);
     event TokensAdded(address indexed owner, uint256 amount);
     event UnsoldTokensWithdrawn(address indexed owner, uint256 amount);
+    event DeveloperFeeFailed(address indexed recipient, uint256 amount);
+    event DeveloperFeeRetried(address indexed recipient, uint256 amount);
 
     // Modifiers //
 
@@ -160,7 +170,9 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     /**
      * @dev Allows Project owners to withdraw ERC20 funding Tokens if and only if the minimum number of tokens has been sold.
      * The developer fee goes to the developer address and the rest to `to`, so the owner can send their
-     * share to an address other than the withdrawal address. The call reverts if either transfer fails.
+     * share to an address other than the withdrawal address. The call reverts if the owner's share cannot be
+     * sent. A developer fee that cannot be sent does not block the owner: it is parked under the developer
+     * address and can be paid later with retryDeveloperFee.
      * @param to address that receives the owner's share
      */
 
@@ -168,15 +180,46 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
         if (!minimumReached()) revert MinFundingAmountNotReached();
         if (to == address(0)) revert ZeroAddressRecipient();
 
-        uint256 fundsCollected = fundingToken.balanceOf(address(this));
+        uint256 fundsCollected = fundingToken.balanceOf(address(this)) -
+            totalPendingDeveloperFee;
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
 
-        fundingToken.safeTransfer(developerFeeAddress, developerFee);
+        // A failed transfer (a revert, a false return, running out of the capped gas, or an address with no
+        // code) is reported as false instead of reverting.
+        if (
+            developerFee > 0 &&
+            !_tryTransferCapped(
+                developerFeeAddress,
+                developerFee,
+                DEVELOPER_FEE_TRANSFER_GAS
+            )
+        ) {
+            pendingDeveloperFee[developerFeeAddress] += developerFee;
+            totalPendingDeveloperFee += developerFee;
+            emit DeveloperFeeFailed(developerFeeAddress, developerFee);
+        }
 
         fundingToken.safeTransfer(to, amountToWithdraw);
 
         emit FundsWithdrawn(msg.sender, amountToWithdraw);
+    }
+
+    /**
+     * @dev Pays a developer fee that could not be sent during withdrawFunds.
+     * Anyone can call it, but the fee only ever goes to `recipient`, the address that was owed it, never to the caller.
+     * @param recipient address whose parked developer fee is paid
+     */
+    function retryDeveloperFee(address recipient) external nonReentrant {
+        uint256 amount = pendingDeveloperFee[recipient];
+        if (amount == 0) revert NoPendingDeveloperFee();
+
+        pendingDeveloperFee[recipient] = 0;
+        totalPendingDeveloperFee -= amount;
+
+        fundingToken.safeTransfer(recipient, amount);
+
+        emit DeveloperFeeRetried(recipient, amount);
     }
 
     /**
@@ -241,6 +284,50 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
      */
     function minimumReached() public view returns (bool) {
         return totalSold - totalRefunded >= minFundingAmount;
+    }
+
+    /**
+     * @dev Transfers the funding token like OpenZeppelin's SafeERC20.trySafeTransfer, which cannot limit gas:
+     * it returns false instead of reverting, and counts the transfer as successful only if the call succeeds and
+     * returns either true or nothing from an address that has code. The call gets at most `gasLimit` gas, and
+     * only the first 32 bytes of return data are copied.
+     */
+    function _tryTransferCapped(
+        address to,
+        uint256 amount,
+        uint256 gasLimit
+    ) private returns (bool) {
+        address token = address(fundingToken);
+        bytes memory callData = abi.encodeCall(IERC20.transfer, (to, amount));
+        bool success;
+        uint256 returnSize;
+        uint256 returnValue;
+        assembly ("memory-safe") {
+            mstore(0x00, 0)
+            success := call(
+                gasLimit,
+                token,
+                0,
+                add(callData, 0x20),
+                mload(callData),
+                0x00,
+                0x20
+            )
+            returnSize := returndatasize()
+            returnValue := mload(0x00)
+        }
+        return
+            success &&
+            (returnSize == 0 ? token.code.length > 0 : returnValue == 1);
+    }
+
+    /**
+     * @notice The developer fee parked for `recipient` because it could not be sent during withdrawFunds.
+     */
+    function getPendingDeveloperFee(
+        address recipient
+    ) public view returns (uint256) {
+        return pendingDeveloperFee[recipient];
     }
 
     /**

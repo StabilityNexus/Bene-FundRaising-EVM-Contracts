@@ -281,5 +281,79 @@ export async function deployBlacklistFundingVaultFixture() {
   );
   const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
   const vault = await ethers.getContractAt("FundingVaultERC20", vaultAddress);
-  return { ...base, blockable, vault, config, deadline: config.timestamp };
+  return { ...base, blockable, token: blockable, vault, config, deadline: config.timestamp };
+}
+
+/**
+ * A FundingVaultERC20 funded in the given mock token (which must have mint and setBlocked), deployed through the
+ * factory by `owner`. Alice and Bob start with a funding balance. `overrides` adjusts the vault config.
+ */
+export async function deployVaultFundedIn(contractName: string, overrides: Partial<VaultConfig> = {}) {
+  const base = await deployFactoryFixture();
+  const { factory, pft, owner, developer, alice, bob } = base;
+  const token = await (await ethers.getContractFactory(contractName)).deploy(contractName, "TKN");
+  await token.waitForDeployment();
+  for (const holder of [alice, bob]) {
+    await token.mint(holder.address, CONTRIBUTOR_FUNDING_BALANCE);
+  }
+  const config = await buildConfig(
+    {
+      proofOfFundingToken: await pft.getAddress(),
+      withdrawalAddress: owner.address,
+      developerFeeAddress: developer.address,
+    },
+    { fundingToken: await token.getAddress(), ...overrides },
+  );
+  const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
+  const vault = await ethers.getContractAt("FundingVaultERC20", vaultAddress);
+  return { ...base, token, vault, config, deadline: config.timestamp };
+}
+
+/** A FundingVaultERC20 funded in a token whose transfer() returns false (instead of reverting) for blocked recipients. */
+export async function deployReturnFalseFundingVaultFixture() {
+  return deployVaultFundedIn("MockReturnFalseERC20");
+}
+
+/** A FundingVaultERC20 funded in a USDT-style token whose transfer() returns nothing and reverts for blocked recipients. */
+export async function deployNoReturnFundingVaultFixture() {
+  return deployVaultFundedIn("MockNoReturnERC20");
+}
+
+/**
+ * A gas-burning recipient (see GasBurningRecipient) plus helpers that deploy native-ETH and ERC20 vaults whose
+ * developer fee address is any given address. The ERC20 vaults are funded in a token with ERC777-style recipient
+ * hooks, to which the recipient is registered, so the hook can burn gas during the transfer. Alice holds the token.
+ */
+export async function deployGasBurningFixture() {
+  const base = await deployFactoryFixture();
+  const { factory, pft, owner, alice } = base;
+  const burner = await (await ethers.getContractFactory("GasBurningRecipient")).deploy();
+  await burner.waitForDeployment();
+  const hookToken = await (await ethers.getContractFactory("MockHookERC20")).deploy("Hook Token", "HOOK");
+  await hookToken.waitForDeployment();
+  await hookToken.mint(alice.address, CONTRIBUTOR_FUNDING_BALANCE);
+  await burner.register(await hookToken.getAddress());
+
+  const configFor = (developerFeeAddress: string, fundingToken?: string) =>
+    buildConfig(
+      { proofOfFundingToken: "", withdrawalAddress: owner.address, developerFeeAddress },
+      { fundingToken: fundingToken ?? ZERO_ADDRESS },
+    );
+  const deploy = async (
+    name: "FundingVault" | "FundingVaultERC20",
+    developerFeeAddress: string,
+    fundingToken?: string,
+  ) => {
+    const config = await configFor(developerFeeAddress, fundingToken);
+    config.proofOfFundingToken = await pft.getAddress();
+    return ethers.getContractAt(name, await deployVaultViaFactory(factory, owner, pft, config));
+  };
+  return {
+    ...base,
+    burner,
+    hookToken,
+    deployEthVault: (developerFeeAddress: string) => deploy("FundingVault", developerFeeAddress),
+    deployErc20Vault: async (developerFeeAddress: string) =>
+      deploy("FundingVaultERC20", developerFeeAddress, await hookToken.getAddress()),
+  };
 }
