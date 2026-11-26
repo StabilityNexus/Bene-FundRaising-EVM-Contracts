@@ -67,6 +67,11 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
     mapping(address => uint256) private pendingDeveloperFee; // Developer fee that could not be sent, owed to the address that failed to receive it.
     uint256 private totalPendingDeveloperFee; // Sum of pendingDeveloperFee. Still held by the vault, so excluded from the next withdrawal.
+    /// @dev Gas given to the developer-fee transfer in withdrawFunds. Plenty for a normal transfer to a
+    /// contract wallet. A token's recipient hook cannot burn more than this, so it cannot run the withdrawal
+    /// out of gas. A fee that needs more stays parked, and retryDeveloperFee forwards all gas. The owner's own
+    /// share is not capped.
+    uint256 private constant DEVELOPER_FEE_TRANSFER_GAS = 200_000;
 
     /**
      * @dev A vault is represented as a struct
@@ -180,11 +185,15 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
 
-        // trySafeTransfer reports a failed transfer (a revert, a false return, or an address with no code)
-        // as false instead of reverting.
+        // A failed transfer (a revert, a false return, running out of the capped gas, or an address with no
+        // code) is reported as false instead of reverting.
         if (
             developerFee > 0 &&
-            !fundingToken.trySafeTransfer(developerFeeAddress, developerFee)
+            !_tryTransferCapped(
+                developerFeeAddress,
+                developerFee,
+                DEVELOPER_FEE_TRANSFER_GAS
+            )
         ) {
             pendingDeveloperFee[developerFeeAddress] += developerFee;
             totalPendingDeveloperFee += developerFee;
@@ -275,6 +284,41 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
      */
     function minimumReached() public view returns (bool) {
         return totalSold - totalRefunded >= minFundingAmount;
+    }
+
+    /**
+     * @dev Transfers the funding token like OpenZeppelin's SafeERC20.trySafeTransfer, which cannot limit gas:
+     * it returns false instead of reverting, and counts the transfer as successful only if the call succeeds and
+     * returns either true or nothing from an address that has code. The call gets at most `gasLimit` gas, and
+     * only the first 32 bytes of return data are copied.
+     */
+    function _tryTransferCapped(
+        address to,
+        uint256 amount,
+        uint256 gasLimit
+    ) private returns (bool) {
+        address token = address(fundingToken);
+        bytes memory callData = abi.encodeCall(IERC20.transfer, (to, amount));
+        bool success;
+        uint256 returnSize;
+        uint256 returnValue;
+        assembly ("memory-safe") {
+            mstore(0x00, 0)
+            success := call(
+                gasLimit,
+                token,
+                0,
+                add(callData, 0x20),
+                mload(callData),
+                0x00,
+                0x20
+            )
+            returnSize := returndatasize()
+            returnValue := mload(0x00)
+        }
+        return
+            success &&
+            (returnSize == 0 ? token.code.length > 0 : returnValue == 1);
     }
 
     /**

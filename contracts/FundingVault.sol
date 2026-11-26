@@ -64,6 +64,11 @@ contract FundingVault is ERC20, ReentrancyGuard {
     uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
     mapping(address => uint256) private pendingDeveloperFee; // Developer fee that could not be sent, owed to the address that failed to receive it.
     uint256 private totalPendingDeveloperFee; // Sum of pendingDeveloperFee. Still held by the vault, so excluded from the next withdrawal.
+    /// @dev Gas given to the developer-fee transfer in withdrawFunds. Plenty for a normal transfer to a
+    /// contract wallet. A recipient's receive function cannot burn more than this, so it cannot run the
+    /// withdrawal out of gas. A fee that needs more stays parked, and retryDeveloperFee forwards all gas.
+    /// The owner's own share is not capped.
+    uint256 private constant DEVELOPER_FEE_TRANSFER_GAS = 200_000;
 
     /**
      * @dev A vault is represented as a struct
@@ -175,7 +180,8 @@ contract FundingVault is ERC20, ReentrancyGuard {
 
         if (developerFee > 0) {
             (bool successDeveloper, ) = payable(developerFeeAddress).call{
-                value: developerFee
+                value: developerFee,
+                gas: DEVELOPER_FEE_TRANSFER_GAS
             }("");
             if (!successDeveloper) {
                 pendingDeveloperFee[developerFeeAddress] += developerFee;
