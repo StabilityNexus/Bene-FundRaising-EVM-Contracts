@@ -6,11 +6,18 @@ pragma solidity ^0.8.28;
  * @notice Test-only contract that reverts on every plain ETH transfer but can
  * still make arbitrary calls through execute(). It stands in for a recipient
  * (such as a developer fee address or a vault's withdrawal address) that
- * cannot receive ETH.
+ * cannot receive ETH. It rejects ETH until setAccepting(true) is called, which
+ * lets a test model a recipient that recovers.
  */
 contract RejectingReceiver {
+    bool public accepting;
+
+    function setAccepting(bool isAccepting) external {
+        accepting = isAccepting;
+    }
+
     receive() external payable {
-        revert("RejectingReceiver: ETH not accepted");
+        if (!accepting) revert("RejectingReceiver: ETH not accepted");
     }
 
     function execute(

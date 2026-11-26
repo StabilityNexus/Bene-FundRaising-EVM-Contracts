@@ -281,5 +281,40 @@ export async function deployBlacklistFundingVaultFixture() {
   );
   const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
   const vault = await ethers.getContractAt("FundingVaultERC20", vaultAddress);
-  return { ...base, blockable, vault, config, deadline: config.timestamp };
+  return { ...base, blockable, token: blockable, vault, config, deadline: config.timestamp };
+}
+
+/**
+ * A FundingVaultERC20 funded in the given mock token (which must have mint and setBlocked), deployed through the
+ * factory by `owner`. Alice and Bob start with a funding balance. `overrides` adjusts the vault config.
+ */
+export async function deployVaultFundedIn(contractName: string, overrides: Partial<VaultConfig> = {}) {
+  const base = await deployFactoryFixture();
+  const { factory, pft, owner, developer, alice, bob } = base;
+  const token = await (await ethers.getContractFactory(contractName)).deploy(contractName, "TKN");
+  await token.waitForDeployment();
+  for (const holder of [alice, bob]) {
+    await token.mint(holder.address, CONTRIBUTOR_FUNDING_BALANCE);
+  }
+  const config = await buildConfig(
+    {
+      proofOfFundingToken: await pft.getAddress(),
+      withdrawalAddress: owner.address,
+      developerFeeAddress: developer.address,
+    },
+    { fundingToken: await token.getAddress(), ...overrides },
+  );
+  const vaultAddress = await deployVaultViaFactory(factory, owner, pft, config);
+  const vault = await ethers.getContractAt("FundingVaultERC20", vaultAddress);
+  return { ...base, token, vault, config, deadline: config.timestamp };
+}
+
+/** A FundingVaultERC20 funded in a token whose transfer() returns false (instead of reverting) for blocked recipients. */
+export async function deployReturnFalseFundingVaultFixture() {
+  return deployVaultFundedIn("MockReturnFalseERC20");
+}
+
+/** A FundingVaultERC20 funded in a USDT-style token whose transfer() returns nothing and reverts for blocked recipients. */
+export async function deployNoReturnFundingVaultFixture() {
+  return deployVaultFundedIn("MockNoReturnERC20");
 }

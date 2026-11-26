@@ -47,6 +47,7 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     //error EthTransferToDeveloperFailed();
     //error EthTransferToWithdrawalFailed();
     error ZeroAddressRecipient();
+    error NoPendingDeveloperFee();
     error OwnerOnly();
 
     // State Variables //
@@ -64,6 +65,8 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     string public projectDescription; // Short description of the project
     uint256 public totalSold; // Total funding ever received. Only ever increases.
     uint256 public totalRefunded; // Total funding ever refunded. Only ever increases.
+    mapping(address => uint256) private pendingDeveloperFee; // Developer fee that could not be sent, owed to the address that failed to receive it.
+    uint256 private totalPendingDeveloperFee; // Sum of pendingDeveloperFee. Still held by the vault, so excluded from the next withdrawal.
 
     /**
      * @dev A vault is represented as a struct
@@ -89,6 +92,8 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     event Redeemed(address indexed user, uint256 amount);
     event TokensAdded(address indexed owner, uint256 amount);
     event UnsoldTokensWithdrawn(address indexed owner, uint256 amount);
+    event DeveloperFeeFailed(address indexed recipient, uint256 amount);
+    event DeveloperFeeRetried(address indexed recipient, uint256 amount);
 
     // Modifiers //
 
@@ -160,7 +165,9 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
     /**
      * @dev Allows Project owners to withdraw ERC20 funding Tokens if and only if the minimum number of tokens has been sold.
      * The developer fee goes to the developer address and the rest to `to`, so the owner can send their
-     * share to an address other than the withdrawal address. The call reverts if either transfer fails.
+     * share to an address other than the withdrawal address. The call reverts if the owner's share cannot be
+     * sent. A developer fee that cannot be sent does not block the owner: it is parked under the developer
+     * address and can be paid later with retryDeveloperFee.
      * @param to address that receives the owner's share
      */
 
@@ -168,15 +175,42 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
         if (!minimumReached()) revert MinFundingAmountNotReached();
         if (to == address(0)) revert ZeroAddressRecipient();
 
-        uint256 fundsCollected = fundingToken.balanceOf(address(this));
+        uint256 fundsCollected = fundingToken.balanceOf(address(this)) -
+            totalPendingDeveloperFee;
         uint256 developerFee = (fundsCollected * developerFeePercentage) / 100;
         uint256 amountToWithdraw = fundsCollected - developerFee;
 
-        fundingToken.safeTransfer(developerFeeAddress, developerFee);
+        // trySafeTransfer reports a failed transfer (a revert, a false return, or an address with no code)
+        // as false instead of reverting.
+        if (
+            developerFee > 0 &&
+            !fundingToken.trySafeTransfer(developerFeeAddress, developerFee)
+        ) {
+            pendingDeveloperFee[developerFeeAddress] += developerFee;
+            totalPendingDeveloperFee += developerFee;
+            emit DeveloperFeeFailed(developerFeeAddress, developerFee);
+        }
 
         fundingToken.safeTransfer(to, amountToWithdraw);
 
         emit FundsWithdrawn(msg.sender, amountToWithdraw);
+    }
+
+    /**
+     * @dev Pays a developer fee that could not be sent during withdrawFunds.
+     * Anyone can call it, but the fee only ever goes to `recipient`, the address that was owed it, never to the caller.
+     * @param recipient address whose parked developer fee is paid
+     */
+    function retryDeveloperFee(address recipient) external nonReentrant {
+        uint256 amount = pendingDeveloperFee[recipient];
+        if (amount == 0) revert NoPendingDeveloperFee();
+
+        pendingDeveloperFee[recipient] = 0;
+        totalPendingDeveloperFee -= amount;
+
+        fundingToken.safeTransfer(recipient, amount);
+
+        emit DeveloperFeeRetried(recipient, amount);
     }
 
     /**
@@ -241,6 +275,15 @@ contract FundingVaultERC20 is ERC20, ReentrancyGuard {
      */
     function minimumReached() public view returns (bool) {
         return totalSold - totalRefunded >= minFundingAmount;
+    }
+
+    /**
+     * @notice The developer fee parked for `recipient` because it could not be sent during withdrawFunds.
+     */
+    function getPendingDeveloperFee(
+        address recipient
+    ) public view returns (uint256) {
+        return pendingDeveloperFee[recipient];
     }
 
     /**
